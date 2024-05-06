@@ -1,13 +1,14 @@
 use super::tree::CommandArgs;
+use regex::Regex;
 
 const ARG_DEPTH_KEY: &str = "-d";
 const ARG_EXCLUDE_KEY: &str = "-e";
-const ARG_HELP_KEY: &str = "-h";
 
 pub fn parse_command(args: &Vec<String>) -> CommandArgs {
     let mut cmd_args = CommandArgs {
         path: String::from(args.get(1).unwrap()),
         depth_check: None,
+        exclude_pattern: None,
     };
     let mut i = 2;
     loop {
@@ -23,9 +24,10 @@ pub fn parse_command(args: &Vec<String>) -> CommandArgs {
                 i += 1;
                 cmd_args.depth_check = Some(args.get(i).unwrap().parse::<u32>().unwrap());
             } else if item.eq(ARG_EXCLUDE_KEY) {
-                // Todo
-            } else if item.eq(ARG_HELP_KEY) {
-                // Todo
+                i += 1;
+                let pattern = args.get(i).unwrap();
+                let _ = Regex::new(pattern).unwrap();
+                cmd_args.exclude_pattern = Some(String::from(pattern));
             } else {
                 panic!("invalid arg")
             }

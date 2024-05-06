@@ -7,3 +7,11 @@ This command is useful for scenarios where making a complete backup of complete 
 # Arguments 
 - [Mandatory] Path - Must always be the first argument.
 - [Optional] Depth - [-d <number>] Controls how deep to go to generate the tree. Note that if there are children of a directory which are not included in the tree due to depth control then `size_in_bytes` for those directories and cascadingly for all their parent directories would be null as reporting them  without evaluating children would be incorrect.
+- [Optional] Exclude - [-e <regex_pattern>] Controls which paths to exclude from snapshot.
+
+# How to use
+```
+# [Install cargo](https://doc.rust-lang.org/cargo/getting-started/installation.html)
+- `cargo install win_tree`
+- `win_tree <path> -d <depth> -e "<pattern>" > snapshot.json`
+```

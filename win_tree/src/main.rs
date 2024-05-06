@@ -8,8 +8,14 @@
 //! # Arguments
 //! - [Mandatory] Path - Must always be the first argument.
 //! - [Optional] Depth - [-d <number>] Controls how deep to go to generate the tree. Note that if there are children of a directory which are not included in the tree due to depth control then `size_in_bytes` for those directories and cascadingly for all their parent directories would be null as reporting them  without evaluating children would be incorrect.
+//! - [Optional] Exclude - [-e <regex_pattern>] Controls which paths to exclude from snapshot.
+//!
 //! # Example
-//! ```win_tree . -d 3 > snapshot.json```
+//! This command generates snapshots for non-hidden (not starting with a dot) files and directories upto a depth of 3 and dumps it in snapshot.json.
+//! ```win_tree . -d 3 -e "^\..*" > snapshot.json```
+//!
+//! This command generates snapshots for non-hidden (not starting with a dot) files and directories which are not in `doc` or `debug` directories and dumps it in snapshot.json.
+//! ```win_tree . -e "^(?:\..*|doc|debug)" > snapshot.json```
 
 mod cli;
 mod tree;

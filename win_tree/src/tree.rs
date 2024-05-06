@@ -1,3 +1,4 @@
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io;
@@ -23,6 +24,8 @@ pub struct CommandArgs {
     pub path: String,
     /// Optional depth check to limit the depth of the tree traversal.
     pub depth_check: Option<u32>,
+    /// Optional exclude pattern to exclude certain paths from snapshot.
+    pub exclude_pattern: Option<String>,
 }
 
 /// Builds a tree structure representing the directory structure starting from the specified path.
@@ -37,21 +40,41 @@ pub struct CommandArgs {
 pub fn build_tree(args: CommandArgs) -> Result<TreeNode, io::Error> {
     let dir = Path::new(&args.path);
     let dir = &dir.canonicalize().unwrap();
-    return _build_tree(Path::new(dir), args.depth_check, 0);
+    let ep: String;
+    let exclude_pattern = match args.exclude_pattern {
+        Some(x) => {
+            ep = x;
+            Some(&ep[..])
+        }
+        None => None,
+    };
+    return _build_tree(Path::new(dir), args.depth_check, exclude_pattern, 0);
 }
 
-fn _build_tree(dir: &Path, depth_check: Option<u32>, depth: u32) -> Result<TreeNode, io::Error> {
+fn _build_tree(
+    dir: &Path,
+    depth_check: Option<u32>,
+    exclude_pattern: Option<&str>,
+    depth: u32,
+) -> Result<TreeNode, io::Error> {
     let mut children: Vec<TreeNode> = vec![];
     let mut total_size: Option<u64> = None;
     if dir.is_file() {
         total_size = Some(dir.metadata()?.len());
     }
-    if dir.is_dir() && (depth_check.is_none() || depth <= depth_check.unwrap()) {
+    if dir.is_dir() && (depth_check.is_none() || depth < depth_check.unwrap()) {
         total_size = Some(0);
         for entry in fs::read_dir(dir)? {
             let entry = entry?.path();
             let entry = entry.as_path();
-            let entry_node = _build_tree(entry, depth_check, depth + 1)?;
+            if exclude_pattern.is_some()
+                && Regex::new(exclude_pattern.unwrap())
+                    .unwrap()
+                    .is_match(entry.file_name().unwrap().to_str().unwrap())
+            {
+                continue;
+            }
+            let entry_node = _build_tree(entry, depth_check, exclude_pattern, depth + 1)?;
             // Calculate size only if each of the children also has a calculated size.
             total_size = match (total_size, entry_node.size_in_bytes) {
                 (Some(curr_size), Some(child_size)) => Some(curr_size + child_size),

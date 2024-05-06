@@ -1,6 +1,6 @@
 [package]
 name = "win_tree"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 
 authors = ["Saurabh Goyal <saurabh.2561@gmail.com>"]
@@ -8,10 +8,11 @@ description = "Tree command to generate file system tree structure snapshot in J
 license = "MIT/Apache-2.0"
 readme = "README.md"
 
-repository = "https://github.com/SaurabhGoyal/rust_labs/win_tree"
-homepage = "https://github.com/SaurabhGoyal/rust_labs/win_tree"
+repository = "https://github.com/SaurabhGoyal/rust_labs/tree/main/win_tree"
+homepage = "https://github.com/SaurabhGoyal/rust_labs/tree/main/win_tree"
 documentation = "https://docs.rs/win_tree"
 
 [dependencies]
+regex = "1.10.4"
 serde = { version = "1.0.200" , features = ["derive"] }
 serde_json = "1.0.116"
