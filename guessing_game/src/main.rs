@@ -1,9 +1,7 @@
-mod guessing_game;
-
 use rand::{self, Rng};
 use std::{cmp::Ordering, io};
 
-pub fn guessing_game() {
+fn main() {
     let secret_number = rand::thread_rng().gen_range(1..=100);
     loop {
         let buff = take_guess();
