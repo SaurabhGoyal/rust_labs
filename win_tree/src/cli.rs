@@ -1,4 +1,4 @@
-use super::tree::Config;
+use crate::tree::Config;
 use regex::Regex;
 
 const ARG_DEPTH_KEY: &str = "-d";

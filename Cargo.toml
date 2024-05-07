@@ -1,2 +1,2 @@
 [workspace]
-members = ["guessing_game", "temp", "win_tree"]
+members = ["guessing_game", "sysinfo_cli", "temp", "win_tree"]
