@@ -17,9 +17,9 @@ pub struct TreeNode {
     pub children: Vec<TreeNode>,
 }
 
-/// Represents command line arguments for building the tree.
+/// Represents config for building the tree.
 #[derive(Debug)]
-pub struct CommandArgs {
+pub struct Config {
     /// The path to the directory for which to build the tree.
     pub path: String,
     /// Optional depth check to limit the depth of the tree traversal.
@@ -32,26 +32,26 @@ pub struct CommandArgs {
 ///
 /// # Arguments
 ///
-/// * `args` - Command line arguments specifying the path and depth check.
+/// * `config` - Config specifying the path and other parameters such as depth check and exclude pattern.
 ///
 /// # Returns
 ///
 /// A Result containing a TreeNode representing the root of the tree structure, or an io::Error if the operation fails.
-pub fn build_tree(args: CommandArgs) -> Result<TreeNode, io::Error> {
-    let dir = Path::new(&args.path);
+pub fn build(config: Config) -> Result<TreeNode, io::Error> {
+    let dir = Path::new(&config.path);
     let dir = &dir.canonicalize().unwrap();
     let ep: String;
-    let exclude_pattern = match args.exclude_pattern {
+    let exclude_pattern = match config.exclude_pattern {
         Some(x) => {
             ep = x;
             Some(&ep[..])
         }
         None => None,
     };
-    return _build_tree(Path::new(dir), args.depth_check, exclude_pattern, 0);
+    return _build(Path::new(dir), config.depth_check, exclude_pattern, 0);
 }
 
-fn _build_tree(
+fn _build(
     dir: &Path,
     depth_check: Option<u32>,
     exclude_pattern: Option<&str>,
@@ -74,7 +74,7 @@ fn _build_tree(
             {
                 continue;
             }
-            let entry_node = _build_tree(entry, depth_check, exclude_pattern, depth + 1)?;
+            let entry_node = _build(entry, depth_check, exclude_pattern, depth + 1)?;
             // Calculate size only if each of the children also has a calculated size.
             total_size = match (total_size, entry_node.size_in_bytes) {
                 (Some(curr_size), Some(child_size)) => Some(curr_size + child_size),

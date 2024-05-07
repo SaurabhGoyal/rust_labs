@@ -19,14 +19,11 @@
 
 mod cli;
 mod tree;
-use cli::parse_command;
 use std::env;
-use tree::build_tree;
 
 fn main() {
-    let args: Vec<String> = env::args().collect();
-    let cmd_args = parse_command(&args);
-    let root = build_tree(cmd_args).unwrap();
+    let config = tree::Config::build_from_args(env::args());
+    let root = tree::build(config).unwrap();
     let root = serde_json::to_string_pretty(&root).unwrap();
     println!("{root}");
 }
