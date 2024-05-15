@@ -1,18 +1,20 @@
 use chrono::Utc;
 use std::{
+    collections::HashSet,
     io::{self, Write as _},
     num::Wrapping,
     ops::DerefMut,
     sync::{Arc, Mutex},
-    thread::{self},
+    thread,
     time::Duration,
 };
 
-const HANDLE_DELAY: u64 = 1000;
-const RENDER_DELAY: u64 = 500;
+const HANDLE_DELAY: u64 = 2000;
+const RENDER_DELAY: u64 = 2000;
 
 struct Cell {
     val: usize,
+    fixed: bool,
     candidates: Vec<usize>,
 }
 
@@ -25,22 +27,43 @@ struct Board {
 impl Board {
     fn pprint(&self) -> (String, bool) {
         let dim = self.s_dim * self.s_dim;
-        let line_sep = format!("\n{}\n", vec!["-"; 4 * dim + 1].join(""));
+        let line_sep_single = format!("\n{}\n", vec!["-"; 6 * dim + 1].join(""));
+        let line_sep_double = format!("\n{}\n", vec!["⹀"; 6 * dim + 1].join(""));
         let mut s = String::new();
         let mut complete = true;
-        s.push_str(&line_sep);
+        s.push_str(&line_sep_double);
         for (i, cell) in self.cells.iter().enumerate() {
             if cell.val == 0 {
                 complete = false;
             }
+            let val_str = if cell.val == 0 {
+                format!("     ")
+            } else if cell.fixed {
+                format!("`{: ^3}`", cell.val)
+            } else {
+                format!("{: ^5}", cell.val)
+            };
             s.push_str(&format!(
-                "{}{: ^3}|{}",
-                if i % dim == 0 { "|" } else { "" },
-                cell.val,
-                if i % dim == dim - 1 { &line_sep } else { "" }
+                "{}{}{}{}",
+                if i % dim == 0 { "‖" } else { "" },
+                val_str,
+                if i % self.s_dim == self.s_dim - 1 {
+                    "‖"
+                } else {
+                    "|"
+                },
+                if i % dim == dim - 1 {
+                    if i % (self.s_dim * dim) == (self.s_dim * dim) - 1 {
+                        &line_sep_double
+                    } else {
+                        &line_sep_single
+                    }
+                } else {
+                    ""
+                },
             ));
         }
-        for log in &self.logs {
+        for log in self.logs.iter().rev().take(10) {
             s.push_str(&format!("{}\n", log));
         }
         (s, complete)
@@ -68,11 +91,26 @@ fn parse(buf: &str) -> Board {
         println!("{cell_count}, {dim}, {s_dim}");
         panic!("Invalid dimension");
     }
+    let default_candidates: Vec<usize> = (0..=dim).collect();
     let cells = cell_values
         .into_iter()
         .map(|cv| Cell {
             val: cv,
-            candidates: (0..=dim).collect(),
+            fixed: cv > 0,
+            candidates: default_candidates
+                .iter()
+                .map(|v| {
+                    if cv == 0 {
+                        *v
+                    } else {
+                        if cv == *v {
+                            cv
+                        } else {
+                            0
+                        }
+                    }
+                })
+                .collect(),
         })
         .collect();
     Board {
@@ -104,14 +142,18 @@ fn main() {
                 handle_cell(board_arc_mutex_clone, s_dim, index)
             }));
         }
-        // for index in 0..dim {
-        //     for num in 1..=dim {
-        //         let board_arc_mutex_clone = Arc::clone(&board_arc_mutex);
-        //         handles.push(thread::spawn(move || {
-        //             handle_number(board_arc_mutex_clone, index, num)
-        //         }));
-        //     }
-        // }
+        for cat in 0..=2 {
+            for index in 0..dim {
+                let candidates = find_candidate_cells(s_dim, cat, index);
+                for num in 1..=dim {
+                    let board_arc_mutex_clone = Arc::clone(&board_arc_mutex);
+                    let candidates = candidates.clone();
+                    handles.push(thread::spawn(move || {
+                        handle_number(board_arc_mutex_clone, s_dim, num, candidates)
+                    }));
+                }
+            }
+        }
         let board_arc_mutex_clone = Arc::clone(&board_arc_mutex);
         handles.push(thread::spawn(move || render(board_arc_mutex_clone)));
         for handle in handles {
@@ -145,14 +187,16 @@ fn handle_cell(board_arc_mutex: Arc<Mutex<Board>>, s_dim: usize, index: usize) {
                 .filter(|x| **x > usize::MIN)
                 .collect();
             if candidates.len() == 1 {
-                board.logs.push(format!(
-                    "[{:#?}] {:?}, {:?} -> {:?}",
-                    Utc::now().to_rfc3339(),
-                    index / dim,
-                    index % dim,
-                    candidates,
-                ));
-                board.cells[index].val = *candidates[0];
+                if board.cells[index].val != *candidates[0] {
+                    board.logs.push(format!(
+                        "[{:#?}] Cell logic - {:?}, {:?} -> {:?}",
+                        Utc::now().to_rfc3339(),
+                        index / dim,
+                        index % dim,
+                        candidates,
+                    ));
+                    board.cells[index].val = *candidates[0];
+                }
                 break;
             }
         }
@@ -160,51 +204,72 @@ fn handle_cell(board_arc_mutex: Arc<Mutex<Board>>, s_dim: usize, index: usize) {
     }
 }
 
-fn handle_number(board_arc_mutex: Arc<Mutex<Board>>, box_index: usize, number: usize) {
-    let s_dim = board_arc_mutex.lock().unwrap().s_dim;
+fn find_candidate_cells(s_dim: usize, category: usize, index: usize) -> HashSet<usize> {
     let dim = s_dim * s_dim;
-    let index = (box_index / s_dim) * s_dim * dim + ((box_index % s_dim) * s_dim);
-    let ci: usize = index / dim;
-    let cj: usize = index % dim;
-    let div_i = ci / s_dim;
-    let div_j = cj / s_dim;
-    let mut candidates: Vec<usize> = vec![];
-    for i in (div_i * s_dim)..((div_i + 1) * s_dim) {
-        for j in (div_j * s_dim)..((div_j + 1) * s_dim) {
-            candidates.push(i * dim + j);
-        }
-    }
-    loop {
-        if candidates.len() == 1 {
-            board_arc_mutex.lock().unwrap().cells[candidates[0]].val = number;
-            break;
-        }
+    let mut candidates: HashSet<usize> = HashSet::new();
+    if category == 0 {
+        let index = (index / s_dim) * s_dim * dim + ((index % s_dim) * s_dim);
+        let ci: usize = index / dim;
+        let cj: usize = index % dim;
+        let div_i = ci / s_dim;
+        let div_j = cj / s_dim;
         for i in (div_i * s_dim)..((div_i + 1) * s_dim) {
             for j in (div_j * s_dim)..((div_j + 1) * s_dim) {
-                if !board_arc_mutex.lock().unwrap().cells[i * dim + j]
-                    .candidates
-                    .contains(&number)
-                {
-                    candidates.remove(i * dim + j);
-                }
-                if number == 7 && box_index == 0 {
-                    println!(
-                        "Cell {:?},{:?} has candidates {:?}",
-                        i,
-                        j,
-                        board_arc_mutex.lock().unwrap().cells[i * dim + j].candidates,
-                    );
-                }
+                candidates.insert(i * dim + j);
             }
         }
-        if number == 7 && box_index == 0 {
-            println!(
-                "Candidates for {:?} in Box-{:?} -> {:?}",
-                number,
-                box_index + 1,
-                candidates
-            );
+    } else if category == 1 {
+        let start_index = index * dim;
+        let _ = (start_index..(start_index + dim))
+            .into_iter()
+            .map(|v| candidates.insert(v));
+    } else if category == 2 {
+        let mut index = index;
+        loop {
+            candidates.insert(index);
+            index += dim;
+            if index >= dim * dim {
+                break;
+            }
         }
+    }
+    candidates
+}
+
+fn handle_number(
+    board_arc_mutex: Arc<Mutex<Board>>,
+    s_dim: usize,
+    number: usize,
+    mut candidates: HashSet<usize>,
+) {
+    let dim = s_dim * s_dim;
+    loop {
+        {
+            let mut mutex_guard = match board_arc_mutex.lock() {
+                Ok(mg) => mg,
+                Err(e) => {
+                    println!("Error in getting lock in handle_number - {number} - {e}");
+                    return;
+                }
+            };
+            let board = mutex_guard.deref_mut();
+            if candidates.iter().count() == 1 {
+                let candidate: &usize = candidates.iter().next().unwrap();
+                if board.cells[*candidate].val != number {
+                    board.logs.push(format!(
+                        "[{:#?}] Number logic - {:?} -> {:?}, {:?}",
+                        Utc::now().to_rfc3339(),
+                        number,
+                        candidate / dim,
+                        candidate % dim,
+                    ));
+                    board.cells[*candidate].val = number;
+                }
+                break;
+            }
+            candidates.retain(|c| board.cells[*c].candidates.contains(&number));
+        }
+        thread::sleep(Duration::from_millis(HANDLE_DELAY));
     }
 }
 
