@@ -9,8 +9,8 @@ use std::{
     time::Duration,
 };
 
-const HANDLE_DELAY: u64 = 2000;
-const RENDER_DELAY: u64 = 2000;
+const HANDLE_DELAY: u64 = 20;
+const RENDER_DELAY: u64 = 20;
 
 struct Cell {
     val: usize,
@@ -25,6 +25,14 @@ struct Board {
 }
 
 impl Board {
+    fn set(&mut self, index: usize, val: usize) {
+        self.cells[index].val = val;
+        self.cells[index]
+            .candidates
+            .iter_mut()
+            .for_each(|v| *v = if *v == val { val } else { 0 });
+    }
+
     fn pprint(&self) -> (String, bool) {
         let dim = self.s_dim * self.s_dim;
         let line_sep_single = format!("\n{}\n", vec!["-"; 6 * dim + 1].join(""));
@@ -186,8 +194,9 @@ fn handle_cell(board_arc_mutex: Arc<Mutex<Board>>, s_dim: usize, index: usize) {
                 .iter()
                 .filter(|x| **x > usize::MIN)
                 .collect();
-            if candidates.len() == 1 {
-                if board.cells[index].val != *candidates[0] {
+            if candidates.iter().count() == 1 {
+                let candidate = candidates.iter().next().unwrap();
+                if board.cells[index].val != **candidate {
                     board.logs.push(format!(
                         "[{:#?}] Cell logic - {:?}, {:?} -> {:?}",
                         Utc::now().to_rfc3339(),
@@ -195,7 +204,7 @@ fn handle_cell(board_arc_mutex: Arc<Mutex<Board>>, s_dim: usize, index: usize) {
                         index % dim,
                         candidates,
                     ));
-                    board.cells[index].val = *candidates[0];
+                    board.set(index, **candidate);
                 }
                 break;
             }
@@ -253,17 +262,19 @@ fn handle_number(
                 }
             };
             let board = mutex_guard.deref_mut();
-            if candidates.iter().count() == 1 {
-                let candidate: &usize = candidates.iter().next().unwrap();
-                if board.cells[*candidate].val != number {
-                    board.logs.push(format!(
-                        "[{:#?}] Number logic - {:?} -> {:?}, {:?}",
-                        Utc::now().to_rfc3339(),
-                        number,
-                        candidate / dim,
-                        candidate % dim,
-                    ));
-                    board.cells[*candidate].val = number;
+            if candidates.iter().count() <= 1 {
+                if candidates.iter().count() == 1 {
+                    let candidate: &usize = candidates.iter().next().unwrap();
+                    if board.cells[*candidate].val != number {
+                        board.logs.push(format!(
+                            "[{:#?}] Number logic - {:?} -> {:?}, {:?}",
+                            Utc::now().to_rfc3339(),
+                            number,
+                            candidate / dim,
+                            candidate % dim,
+                        ));
+                        board.set(*candidate, number);
+                    }
                 }
                 break;
             }
