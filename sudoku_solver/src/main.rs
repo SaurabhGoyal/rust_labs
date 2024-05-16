@@ -1,4 +1,5 @@
 use chrono::Utc;
+use core::num;
 use std::{
     collections::HashSet,
     io::{self, Write as _},
@@ -9,13 +10,13 @@ use std::{
     time::Duration,
 };
 
-const HANDLE_DELAY: u64 = 20;
-const RENDER_DELAY: u64 = 20;
+const HANDLE_DELAY: u64 = 1000;
+const RENDER_DELAY: u64 = 2000;
 
 struct Cell {
     val: usize,
     fixed: bool,
-    candidates: Vec<usize>,
+    candidates: HashSet<usize>,
 }
 
 struct Board {
@@ -27,10 +28,8 @@ struct Board {
 impl Board {
     fn set(&mut self, index: usize, val: usize) {
         self.cells[index].val = val;
-        self.cells[index]
-            .candidates
-            .iter_mut()
-            .for_each(|v| *v = if *v == val { val } else { 0 });
+        self.cells[index].candidates.clear();
+        self.cells[index].candidates.insert(val);
     }
 
     fn pprint(&self) -> (String, bool) {
@@ -99,26 +98,18 @@ fn parse(buf: &str) -> Board {
         println!("{cell_count}, {dim}, {s_dim}");
         panic!("Invalid dimension");
     }
-    let default_candidates: Vec<usize> = (0..=dim).collect();
     let cells = cell_values
         .into_iter()
         .map(|cv| Cell {
             val: cv,
             fixed: cv > 0,
-            candidates: default_candidates
-                .iter()
-                .map(|v| {
-                    if cv == 0 {
-                        *v
-                    } else {
-                        if cv == *v {
-                            cv
-                        } else {
-                            0
-                        }
-                    }
-                })
-                .collect(),
+            candidates: {
+                if cv > 0 {
+                    (cv..=cv).collect()
+                } else {
+                    (1..=dim).collect()
+                }
+            },
         })
         .collect();
     Board {
@@ -157,7 +148,7 @@ fn main() {
                     let board_arc_mutex_clone = Arc::clone(&board_arc_mutex);
                     let candidates = candidates.clone();
                     handles.push(thread::spawn(move || {
-                        handle_number(board_arc_mutex_clone, s_dim, num, candidates)
+                        handle_number(board_arc_mutex_clone, s_dim, cat, index, num, candidates)
                     }));
                 }
             }
@@ -186,7 +177,7 @@ fn handle_cell(board_arc_mutex: Arc<Mutex<Board>>, s_dim: usize, index: usize) {
             for di in &dcells {
                 let val = board.cells[*di].val;
                 if val > 0 {
-                    board.cells[index].candidates[val] = 0;
+                    board.cells[index].candidates.remove(&val);
                 }
             }
             let candidates: Vec<&usize> = board.cells[index]
@@ -229,9 +220,9 @@ fn find_candidate_cells(s_dim: usize, category: usize, index: usize) -> HashSet<
         }
     } else if category == 1 {
         let start_index = index * dim;
-        let _ = (start_index..(start_index + dim))
-            .into_iter()
-            .map(|v| candidates.insert(v));
+        for i in start_index..(start_index + dim) {
+            candidates.insert(i);
+        }
     } else if category == 2 {
         let mut index = index;
         loop {
@@ -248,6 +239,8 @@ fn find_candidate_cells(s_dim: usize, category: usize, index: usize) -> HashSet<
 fn handle_number(
     board_arc_mutex: Arc<Mutex<Board>>,
     s_dim: usize,
+    cat: usize,
+    index: usize,
     number: usize,
     mut candidates: HashSet<usize>,
 ) {
@@ -279,6 +272,36 @@ fn handle_number(
                 break;
             }
             candidates.retain(|c| board.cells[*c].candidates.contains(&number));
+            let row = candidates
+                .iter()
+                .map(|c| c / dim)
+                .reduce(|acc, e| if acc == e { acc } else { dim + 1 })
+                .unwrap_or(dim + 1);
+            if row != dim + 1 {
+                let cc = find_candidate_cells(s_dim, 1, row);
+                for candidate in cc {
+                    if !candidates.contains(&candidate)
+                        && board.cells[candidate].candidates.contains(&number)
+                    {
+                        board.cells[candidate].candidates.remove(&number);
+                    }
+                }
+            }
+            let col = candidates
+                .iter()
+                .map(|c| c % dim)
+                .reduce(|acc, e| if acc == e { acc } else { dim + 1 })
+                .unwrap_or(dim + 1);
+            if col != dim + 1 {
+                let cc = find_candidate_cells(s_dim, 2, col);
+                for candidate in cc {
+                    if !candidates.contains(&candidate)
+                        && board.cells[candidate].candidates.contains(&number)
+                    {
+                        board.cells[candidate].candidates.remove(&number);
+                    }
+                }
+            }
         }
         thread::sleep(Duration::from_millis(HANDLE_DELAY));
     }
