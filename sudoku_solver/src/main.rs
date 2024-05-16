@@ -32,6 +32,22 @@ impl Board {
         self.cells[index].candidates.insert(val);
     }
 
+    fn validate(&self) {
+        let dim = self.s_dim * self.s_dim;
+        for cat in 0..=2 {
+            for index in 0..dim {
+                let mut nums: HashSet<usize> = HashSet::new();
+                for ci in find_candidate_cells(self.s_dim, cat, index) {
+                    let val = self.cells[ci].val;
+                    if val > 0 && nums.contains(&val) {
+                        panic!("Invalid sudoku - {} (in {}) is already present for cat - {}, index - {}", val, ci, cat, index);
+                    }
+                    nums.insert(val);
+                }
+            }
+        }
+    }
+
     fn pprint(&self) -> (String, bool) {
         let dim = self.s_dim * self.s_dim;
         let line_sep_single = format!("\n{}\n", vec!["-"; 6 * dim + 1].join(""));
@@ -351,6 +367,7 @@ fn render(board_arc_mutex: Arc<Mutex<Board>>) {
                 }
             };
             let board = mutex_guard.deref_mut();
+            board.validate();
             let (s, c) = board.pprint();
             println!("{s}");
             if c {
