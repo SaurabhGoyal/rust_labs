@@ -1,6 +1,6 @@
 use chrono::Utc;
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     io::{self, Write as _},
     num::Wrapping,
     ops::DerefMut,
@@ -9,9 +9,10 @@ use std::{
     time::Duration,
 };
 
-const HANDLE_DELAY: u64 = 3000;
-const RENDER_DELAY: u64 = 4000;
-const DEBUG_LOGS: bool = true;
+const HANDLE_DELAY: u64 = 500;
+const RENDER_DELAY: u64 = 1000;
+const LOG_TAIL_LENGTH: usize = 30;
+const DEBUG_LOGS: bool = false;
 
 struct Cell {
     val: usize,
@@ -23,14 +24,18 @@ struct Board {
     s_dim: usize,
     cells: Vec<Cell>,
     logs: Vec<String>,
+    candidate_mask: HashMap<String, HashSet<usize>>,
 }
 
-fn enabled(s_dim: usize, index: usize, val: usize) -> bool {
+fn enabled(action: usize, s_dim: usize, index: usize, val: usize) -> bool {
     let dim = s_dim * s_dim;
+    let debug_actions: Vec<usize> = vec![0, 2];
     let debug_indices: Vec<usize> = (0..(dim * dim)).collect();
-    let debug_indices: Vec<usize> = (29..=29).collect();
     let debug_values: Vec<usize> = (0..dim).collect();
-    DEBUG_LOGS && debug_indices.contains(&index) && debug_values.contains(&val)
+    DEBUG_LOGS
+        && debug_actions.contains(&action)
+        && debug_indices.contains(&index)
+        && debug_values.contains(&val)
 }
 
 impl Board {
@@ -39,7 +44,7 @@ impl Board {
             return;
         }
         let dim = self.s_dim * self.s_dim;
-        if enabled(self.s_dim, index, val) {
+        if enabled(0, self.s_dim, index, val) {
             self.logs.push(format!(
                 "[{:#?}] Cell finalisation - ({:?}, {:?}) -> {:?} Before - {:?} - [Reason -> {:?}]",
                 Utc::now().to_rfc3339(),
@@ -53,22 +58,19 @@ impl Board {
         self.cells[index].val = val;
         self.cells[index].candidates.clear();
         self.cells[index].candidates.insert(val);
-        if enabled(self.s_dim, index, val) {
-            self.logs.push(format!(
-                "[{:#?}] Cell finalisation - ({:?}, {:?}) -> {:?} After - {:?} - [Reason -> {:?}]",
-                Utc::now().to_rfc3339(),
-                index / dim,
-                index % dim,
-                val,
-                self.cells[index].candidates,
-                reason,
-            ));
-        }
+        self.logs.push(format!(
+            "[{:#?}] Cell finalisation - ({:?}, {:?}) -> {:?} [Reason -> {:?}]",
+            Utc::now().to_rfc3339(),
+            index / dim,
+            index % dim,
+            val,
+            reason,
+        ));
     }
 
     fn remove_cell_candidate(&mut self, index: usize, val: usize, reason: &str) {
         let dim = self.s_dim * self.s_dim;
-        if enabled(self.s_dim, index, val) {
+        if enabled(1, self.s_dim, index, val) {
             self.logs.push(format!(
                 "[{:#?}] Cell candidate removal - ({:?}, {:?}) -> {:?} Before - {:?} - [Reason -> {:?}]",
                 Utc::now().to_rfc3339(),
@@ -80,13 +82,41 @@ impl Board {
             ));
         }
         self.cells[index].candidates.remove(&val);
-        if enabled(self.s_dim, index, val) {
+        if enabled(1, self.s_dim, index, val) {
             self.logs.push(format!(
                 "[{:#?}] Cell candidate removal - ({:?}, {:?}) -> {:?} After - {:?} - [Reason -> {:?}]",
                 Utc::now().to_rfc3339(),
                 index / dim,
                 index % dim,
                 val,
+                self.cells[index].candidates,
+                reason,
+            ));
+        }
+    }
+
+    fn replace_cell_candidates(&mut self, index: usize, candidates: &HashSet<usize>, reason: &str) {
+        let dim = self.s_dim * self.s_dim;
+        if enabled(2, self.s_dim, index, 0) {
+            self.logs.push(format!(
+                "[{:#?}] Cell candidates replacement - ({:?}, {:?}) -> {:?} Before - {:?} - [Reason -> {:?}]",
+                Utc::now().to_rfc3339(),
+                index / dim,
+                index % dim,
+                candidates,
+                self.cells[index].candidates,
+                reason,
+            ));
+        }
+        self.cells[index].candidates.clear();
+        self.cells[index].candidates.extend(candidates.iter());
+        if enabled(2, self.s_dim, index, 0) {
+            self.logs.push(format!(
+                "[{:#?}] Cell candidates replacement - ({:?}, {:?}) -> {:?} After - {:?} - [Reason -> {:?}]",
+                Utc::now().to_rfc3339(),
+                index / dim,
+                index % dim,
+                candidates,
                 self.cells[index].candidates,
                 reason,
             ));
@@ -147,7 +177,7 @@ impl Board {
                 },
             ));
         }
-        for log in self.logs.iter().rev().take(500) {
+        for log in self.logs.iter().rev().take(LOG_TAIL_LENGTH) {
             s.push_str(&format!("{}\n", log));
         }
         (s, complete)
@@ -193,6 +223,7 @@ fn parse(buf: &str) -> Board {
         s_dim,
         cells,
         logs: vec![],
+        candidate_mask: HashMap::new(),
     }
 }
 
@@ -319,8 +350,8 @@ fn find_candidate_cells(s_dim: usize, category: usize, index: usize) -> HashSet<
 fn handle_number(
     board_arc_mutex: Arc<Mutex<Board>>,
     s_dim: usize,
-    _cat: usize,
-    _index: usize,
+    cat: usize,
+    index: usize,
     number: usize,
     mut candidates: HashSet<usize>,
 ) {
@@ -345,8 +376,8 @@ fn handle_number(
                             "HandleNumber: Single valid candidate left - ({:?}, {:?}) for cat - {:?} and index - {:?} -> candidates - {:?}",
                             candidate / dim,
                             candidate % dim,
-                            _cat,
-                            _index,
+                            cat,
+                            index,
                             candidates,
                         ),
                     );
@@ -355,18 +386,44 @@ fn handle_number(
             }
             candidates.retain(|c| {
                 let has = board.cells[*c].candidates.contains(&number);
-                if !has && *c == 28 {
-                    board.logs.push(format!(
-                        "[{:#?}] Number logic - removing cell {:?}, {:?} for number {:?} because cell has candidates - {:?}",
-                        Utc::now().to_rfc3339(),
-                        *c / dim,
-                        *c % dim,
-                        number,
-                        board.cells[*c].candidates,
-                    ));
-                }
+                // if !has && *c == 28 {
+                //     board.logs.push(format!(
+                //         "[{:#?}] Number logic - removing cell {:?}, {:?} for number {:?} because cell has candidates - {:?}",
+                //         Utc::now().to_rfc3339(),
+                //         *c / dim,
+                //         *c % dim,
+                //         number,
+                //         board.cells[*c].candidates,
+                //     ));
+                // }
                 has
             });
+            let mut candidates_vec = candidates.iter().map(|x| *x).collect::<Vec<usize>>();
+            candidates_vec.sort();
+            let mask_key = candidates_vec
+                .iter()
+                .map(|x| x.to_string())
+                .collect::<Vec<String>>()
+                .join(",");
+            let num_candidates = board
+                .candidate_mask
+                .entry(mask_key)
+                .or_insert(HashSet::new());
+            num_candidates.insert(number);
+            let num_candidates = num_candidates.clone();
+            if candidates.iter().count() == num_candidates.iter().count() {
+                for ci in &candidates {
+                    board.replace_cell_candidates(
+                        *ci,
+                        &num_candidates,
+                        &format!(
+                            "Cells {:?} and candidates {:?} match size.",
+                            candidates, num_candidates
+                        ),
+                    );
+                }
+            }
+
             let row = candidates
                 .iter()
                 .map(|c| c / dim)
