@@ -1,5 +1,4 @@
 use chrono::Utc;
-use core::num;
 use std::{
     collections::HashSet,
     io::{self, Write as _},
@@ -10,8 +9,9 @@ use std::{
     time::Duration,
 };
 
-const HANDLE_DELAY: u64 = 1000;
-const RENDER_DELAY: u64 = 2000;
+const HANDLE_DELAY: u64 = 3000;
+const RENDER_DELAY: u64 = 4000;
+const DEBUG_LOGS: bool = true;
 
 struct Cell {
     val: usize,
@@ -25,11 +25,72 @@ struct Board {
     logs: Vec<String>,
 }
 
+fn enabled(s_dim: usize, index: usize, val: usize) -> bool {
+    let dim = s_dim * s_dim;
+    let debug_indices: Vec<usize> = (0..(dim * dim)).collect();
+    let debug_indices: Vec<usize> = (29..=29).collect();
+    let debug_values: Vec<usize> = (0..dim).collect();
+    DEBUG_LOGS && debug_indices.contains(&index) && debug_values.contains(&val)
+}
+
 impl Board {
-    fn set(&mut self, index: usize, val: usize) {
+    fn set(&mut self, index: usize, val: usize, reason: &str) {
+        if self.cells[index].val == val {
+            return;
+        }
+        let dim = self.s_dim * self.s_dim;
+        if enabled(self.s_dim, index, val) {
+            self.logs.push(format!(
+                "[{:#?}] Cell finalisation - ({:?}, {:?}) -> {:?} Before - {:?} - [Reason -> {:?}]",
+                Utc::now().to_rfc3339(),
+                index / dim,
+                index % dim,
+                val,
+                self.cells[index].candidates,
+                reason,
+            ));
+        }
         self.cells[index].val = val;
         self.cells[index].candidates.clear();
         self.cells[index].candidates.insert(val);
+        if enabled(self.s_dim, index, val) {
+            self.logs.push(format!(
+                "[{:#?}] Cell finalisation - ({:?}, {:?}) -> {:?} After - {:?} - [Reason -> {:?}]",
+                Utc::now().to_rfc3339(),
+                index / dim,
+                index % dim,
+                val,
+                self.cells[index].candidates,
+                reason,
+            ));
+        }
+    }
+
+    fn remove_cell_candidate(&mut self, index: usize, val: usize, reason: &str) {
+        let dim = self.s_dim * self.s_dim;
+        if enabled(self.s_dim, index, val) {
+            self.logs.push(format!(
+                "[{:#?}] Cell candidate removal - ({:?}, {:?}) -> {:?} Before - {:?} - [Reason -> {:?}]",
+                Utc::now().to_rfc3339(),
+                index / dim,
+                index % dim,
+                val,
+                self.cells[index].candidates,
+                reason,
+            ));
+        }
+        self.cells[index].candidates.remove(&val);
+        if enabled(self.s_dim, index, val) {
+            self.logs.push(format!(
+                "[{:#?}] Cell candidate removal - ({:?}, {:?}) -> {:?} After - {:?} - [Reason -> {:?}]",
+                Utc::now().to_rfc3339(),
+                index / dim,
+                index % dim,
+                val,
+                self.cells[index].candidates,
+                reason,
+            ));
+        }
     }
 
     fn validate(&self) {
@@ -86,7 +147,7 @@ impl Board {
                 },
             ));
         }
-        for log in self.logs.iter().rev().take(10) {
+        for log in self.logs.iter().rev().take(500) {
             s.push_str(&format!("{}\n", log));
         }
         (s, complete)
@@ -192,8 +253,16 @@ fn handle_cell(board_arc_mutex: Arc<Mutex<Board>>, s_dim: usize, index: usize) {
             let board = mutex_guard.deref_mut();
             for di in &dcells {
                 let val = board.cells[*di].val;
-                if val > 0 {
-                    board.cells[index].candidates.remove(&val);
+                if val > 0 && board.cells[index].candidates.contains(&val) {
+                    board.remove_cell_candidate(
+                        index,
+                        val,
+                        &format!(
+                            "HandleCell: Dependency cell ({:?}. {:?}) has this value.",
+                            di / dim,
+                            di % dim
+                        ),
+                    );
                 }
             }
             let candidates: Vec<&usize> = board.cells[index]
@@ -203,16 +272,11 @@ fn handle_cell(board_arc_mutex: Arc<Mutex<Board>>, s_dim: usize, index: usize) {
                 .collect();
             if candidates.iter().count() == 1 {
                 let candidate = candidates.iter().next().unwrap();
-                if board.cells[index].val != **candidate {
-                    board.logs.push(format!(
-                        "[{:#?}] Cell logic - {:?}, {:?} -> {:?}",
-                        Utc::now().to_rfc3339(),
-                        index / dim,
-                        index % dim,
-                        candidates,
-                    ));
-                    board.set(index, **candidate);
-                }
+                board.set(
+                    index,
+                    **candidate,
+                    &format!("HandleCell: Single valid candidate left - {:?}", candidates),
+                );
                 break;
             }
         }
@@ -255,8 +319,8 @@ fn find_candidate_cells(s_dim: usize, category: usize, index: usize) -> HashSet<
 fn handle_number(
     board_arc_mutex: Arc<Mutex<Board>>,
     s_dim: usize,
-    cat: usize,
-    index: usize,
+    _cat: usize,
+    _index: usize,
     number: usize,
     mut candidates: HashSet<usize>,
 ) {
@@ -274,20 +338,35 @@ fn handle_number(
             if candidates.iter().count() <= 1 {
                 if candidates.iter().count() == 1 {
                     let candidate: &usize = candidates.iter().next().unwrap();
-                    if board.cells[*candidate].val != number {
-                        board.logs.push(format!(
-                            "[{:#?}] Number logic - {:?} -> {:?}, {:?}",
-                            Utc::now().to_rfc3339(),
-                            number,
+                    board.set(
+                        *candidate,
+                        number,
+                        &format!(
+                            "HandleNumber: Single valid candidate left - ({:?}, {:?}) for cat - {:?} and index - {:?} -> candidates - {:?}",
                             candidate / dim,
                             candidate % dim,
-                        ));
-                        board.set(*candidate, number);
-                    }
+                            _cat,
+                            _index,
+                            candidates,
+                        ),
+                    );
                 }
                 break;
             }
-            candidates.retain(|c| board.cells[*c].candidates.contains(&number));
+            candidates.retain(|c| {
+                let has = board.cells[*c].candidates.contains(&number);
+                if !has && *c == 28 {
+                    board.logs.push(format!(
+                        "[{:#?}] Number logic - removing cell {:?}, {:?} for number {:?} because cell has candidates - {:?}",
+                        Utc::now().to_rfc3339(),
+                        *c / dim,
+                        *c % dim,
+                        number,
+                        board.cells[*c].candidates,
+                    ));
+                }
+                has
+            });
             let row = candidates
                 .iter()
                 .map(|c| c / dim)
@@ -299,7 +378,16 @@ fn handle_number(
                     if !candidates.contains(&candidate)
                         && board.cells[candidate].candidates.contains(&number)
                     {
-                        board.cells[candidate].candidates.remove(&number);
+                        board.remove_cell_candidate(
+                            candidate,
+                            number,
+                            &format!(
+                                "HandleNumber: Number {:?} has candidates {:?} which is in same row as cell {:?}.",
+                                number,
+                                candidates,
+                                candidate,
+                            ),
+                        );
                     }
                 }
             }
@@ -314,7 +402,16 @@ fn handle_number(
                     if !candidates.contains(&candidate)
                         && board.cells[candidate].candidates.contains(&number)
                     {
-                        board.cells[candidate].candidates.remove(&number);
+                        board.remove_cell_candidate(
+                            candidate,
+                            number,
+                            &format!(
+                                "HandleNumber: Number {:?} has candidates {:?} which is in same col as cell {:?}.",
+                                number,
+                                candidates,
+                                candidate,
+                            ),
+                        );
                     }
                 }
             }
@@ -379,3 +476,6 @@ fn render(board_arc_mutex: Arc<Mutex<Board>>) {
         clear_screen();
     }
 }
+
+#[test]
+fn test() {}
