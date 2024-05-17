@@ -9,8 +9,8 @@ use std::{
     time::Duration,
 };
 
-const HANDLE_DELAY: u64 = 500;
-const RENDER_DELAY: u64 = 1000;
+const HANDLE_DELAY: u64 = 50;
+const RENDER_DELAY: u64 = 100;
 const LOG_TAIL_LENGTH: usize = 30;
 const DEBUG_LOGS: bool = false;
 
@@ -34,10 +34,10 @@ struct Board {
 
 #[derive(Debug)]
 pub struct Solution {
-    solved: bool,
-    s_dim: usize,
-    cells: Vec<usize>,
-    logs: Vec<String>,
+    pub solved: bool,
+    pub s_dim: usize,
+    pub cells: Vec<usize>,
+    pub logs: Vec<String>,
 }
 
 fn enabled(action: usize, s_dim: usize, index: usize, val: usize) -> bool {
@@ -204,13 +204,14 @@ fn is_perfect_square(n: usize) -> bool {
 }
 
 fn parse(buf: &str) -> Board {
-    let parse_cell = |cv: &str| -> usize {
-        if cv.len() == 0 {
-            return 0;
+    let parse_cell = |cv: char| -> usize {
+        if cv == '.' {
+            0
+        } else {
+            cv.to_digit(10).unwrap() as usize
         }
-        return cv.parse::<usize>().unwrap();
     };
-    let cell_values: Vec<usize> = buf.split(",").map(parse_cell).collect();
+    let cell_values: Vec<usize> = buf.chars().map(parse_cell).collect();
     let cell_count = cell_values.len();
     let dim = (cell_count as f64).sqrt() as usize;
     let s_dim = (dim as f64).sqrt() as usize;
@@ -550,6 +551,3 @@ fn render(board_arc_mutex: Arc<Mutex<Board>>) {
         clear_screen();
     }
 }
-
-#[test]
-fn test() {}
