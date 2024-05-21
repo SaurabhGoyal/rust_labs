@@ -13,7 +13,7 @@ use std::{
 
 use chrono::Utc;
 
-const HANDLE_DELAY: u64 = 1500;
+const HANDLE_DELAY: u64 = 2500;
 
 struct Cell {
     val: usize,
@@ -57,14 +57,12 @@ impl SudokuSolver {
                 handle_cell(board_arc_mutex_clone, s_dim, index)
             }));
         }
-        for cat in 0..=2 {
-            for index in 0..dim {
-                let candidates = find_candidate_cells(s_dim, cat, index);
-                for num in 1..=dim {
+        for num in 1..=dim {
+            for cat in 0..=2 {
+                for index in 0..dim {
                     let board_arc_mutex_clone = Arc::clone(&board_arc_mutex);
-                    let candidates = candidates.clone();
                     handles.push(thread::spawn(move || {
-                        handle_number(board_arc_mutex_clone, s_dim, cat, index, num, candidates)
+                        handle_number(board_arc_mutex_clone, s_dim, num, cat, index)
                     }));
                 }
             }
@@ -104,6 +102,7 @@ struct Board {
     cells: Vec<Cell>,
     data_sender: SyncSender<Event>,
     control_receiver: Receiver<String>,
+    num_candidates: Vec<Vec<Vec<HashSet<usize>>>>,
     state: u8,
     logs: Vec<String>,
     candidate_mask: HashMap<String, HashSet<usize>>,
@@ -164,6 +163,32 @@ impl Board {
                 index / dim,
                 index % dim,
                 self.cells[index].candidates,
+                reason,
+            ),
+        });
+    }
+
+    fn remove_num_candidate(
+        &mut self,
+        actor: usize,
+        number: usize,
+        cat: usize,
+        index: usize,
+        val: usize,
+        reason: &str,
+    ) {
+        let dim = self.s_dim * self.s_dim;
+        self.num_candidates[number - 1][cat][index].remove(&val);
+        self.post_update(Event {
+            message: format!(
+                "[{:#?}] Number candidate removal - number {:?} cat - {:?} index - {:?} -> ({:?}, {:?}) Updated - {:?} - [Reason -> {:?}]",
+                Utc::now().to_rfc3339(),
+                number,
+                cat,
+                index,
+                val / dim,
+                val % dim,
+                self.num_candidates[number - 1][cat][index],
                 reason,
             ),
         });
@@ -276,6 +301,7 @@ fn parse(buf: &str, data_sender: SyncSender<Event>, control_receiver: Receiver<S
         cells,
         data_sender,
         control_receiver,
+        num_candidates: vec![vec![vec![HashSet::new(); dim]; 3]; dim],
         logs: vec![],
         candidate_mask: HashMap::new(),
         state: 0,
@@ -368,12 +394,16 @@ fn find_candidate_cells(s_dim: usize, category: usize, index: usize) -> HashSet<
 fn handle_number(
     board_arc_mutex: Arc<Mutex<Board>>,
     s_dim: usize,
+    number: usize,
     cat: usize,
     index: usize,
-    number: usize,
-    mut candidates: HashSet<usize>,
 ) {
     let dim = s_dim * s_dim;
+    let mut mutex_guard = board_arc_mutex.lock().unwrap();
+    let board = mutex_guard.deref_mut();
+    board.num_candidates[number - 1][cat][index] = find_candidate_cells(s_dim, cat, index);
+    drop(board);
+    drop(mutex_guard);
     loop {
         thread::sleep(Duration::from_millis(HANDLE_DELAY));
         {
@@ -385,12 +415,17 @@ fn handle_number(
                 }
             };
             let board = mutex_guard.deref_mut();
-            if candidates.iter().count() <= 1 {
-                if candidates.iter().count() == 1 {
-                    let candidate: &usize = candidates.iter().next().unwrap();
+            let mut candidates = board.num_candidates[number - 1][cat][index]
+                .iter()
+                .map(|x| *x)
+                .collect::<Vec<usize>>();
+            candidates.sort();
+            if candidates.len() <= 1 {
+                if candidates.len() == 1 {
+                    let candidate: usize = candidates[0];
                     board.set(
                         1,
-                        *candidate,
+                        candidate,
                         number,
                         &format!(
                             "HandleNumber: Single valid candidate left - ({:?}, {:?}) for cat - {:?} and index - {:?} -> candidates - {:?}",
@@ -404,29 +439,47 @@ fn handle_number(
                 }
                 break;
             }
-            candidates.retain(|c| board.cells[*c].candidates.contains(&number));
-            let mut candidates_vec = candidates.iter().map(|x| *x).collect::<Vec<usize>>();
-            candidates_vec.sort();
-            let mask_key = candidates_vec
+            for candidate in candidates.iter() {
+                if !board.cells[*candidate].candidates.contains(&number) {
+                    board.remove_num_candidate(1, number, cat, index, *candidate, &format!(
+                        "HandleNumber: Cell - ({:?}, {:?}) does not have number {:?} in its candidates - {:?}",
+                        *candidate / dim,
+                        *candidate % dim,
+                        number,
+                        board.cells[*candidate].candidates,
+                    ));
+                }
+            }
+            let mask_key = candidates
                 .iter()
-                .map(|x| x.to_string())
+                .map(|x| (*x).to_string())
                 .collect::<Vec<String>>()
                 .join(",");
-            let num_candidates = board
+            let mask_numbers = board
                 .candidate_mask
                 .entry(mask_key)
                 .or_insert(HashSet::new());
-            num_candidates.insert(number);
-            let num_candidates = num_candidates.clone();
-            if candidates.iter().count() == num_candidates.iter().count() {
-                for ci in &candidates {
+            mask_numbers.insert(number);
+            let mask_numbers = mask_numbers.clone();
+            drop(board);
+            drop(mutex_guard);
+            let mut mutex_guard = match board_arc_mutex.lock() {
+                Ok(mg) => mg,
+                Err(e) => {
+                    println!("Error in getting lock in handle_number - {number} - {e}");
+                    return;
+                }
+            };
+            let board = mutex_guard.deref_mut();
+            if candidates.iter().count() == mask_numbers.iter().count() {
+                for ci in candidates.iter() {
                     board.replace_cell_candidates(
                         1,
                         *ci,
-                        &num_candidates,
+                        &mask_numbers,
                         &format!(
                             "Cells {:?} and candidates {:?} match size.",
-                            candidates, num_candidates
+                            candidates, mask_numbers
                         ),
                     );
                 }
@@ -434,24 +487,24 @@ fn handle_number(
 
             let row = candidates
                 .iter()
-                .map(|c| c / dim)
+                .map(|c| *c / dim)
                 .reduce(|acc, e| if acc == e { acc } else { dim + 1 })
                 .unwrap_or(dim + 1);
             if row != dim + 1 {
-                let cc = find_candidate_cells(s_dim, 1, row);
-                for candidate in cc {
-                    if !candidates.contains(&candidate)
-                        && board.cells[candidate].candidates.contains(&number)
+                let candidate_cells = find_candidate_cells(s_dim, 1, row);
+                for candidate_cell in candidate_cells {
+                    if !candidates.contains(&&candidate_cell)
+                        && board.cells[candidate_cell].candidates.contains(&number)
                     {
                         board.remove_cell_candidate(
                             1,
-                            candidate,
+                            candidate_cell,
                             number,
                             &format!(
                                 "HandleNumber: Number {:?} has candidates {:?} which is in same row as cell {:?}.",
                                 number,
                                 candidates,
-                                candidate,
+                                candidate_cell,
                             ),
                         );
                     }

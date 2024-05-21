@@ -21,12 +21,11 @@ fn main() {
         }
         let (mut solver, control, data) = SudokuSolver::new(buf);
         for event in data {
-            println!("Event {:?}", event);
-            if event.message.contains("finalisation") {
-                println!("{:?}", solver.pprint());
-            }
+            println!("Event -- {:?}", event);
+            println!("Pprint\n{:?}\n-----\n", solver.pprint());
             let mut cmd = String::new();
             println!("// n: Next, b: Break");
+            io::stdout().flush().unwrap();
             io::stdin().read_line(&mut cmd).unwrap();
             if cmd.eq("n\n") {
                 control.send("n".to_string());
