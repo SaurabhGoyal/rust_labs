@@ -47,6 +47,7 @@
             "name": "Debug executable 'sudoku_solver'",
             "cargo": {
                 "args": [
+                    "+nightly",
                     "build",
                     "--bin=sudoku_solver",
                     "--package=sudoku_solver"
@@ -65,6 +66,7 @@
             "name": "Debug unit tests in executable 'sudoku_solver'",
             "cargo": {
                 "args": [
+                    "+nightly",
                     "test",
                     "--no-run",
                     "--bin=sudoku_solver",

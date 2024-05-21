@@ -9,10 +9,9 @@ use std::{
     time::Duration,
 };
 
-const HANDLE_DELAY: u64 = 50;
-const RENDER_DELAY: u64 = 100;
-const LOG_TAIL_LENGTH: usize = 30;
-const DEBUG_LOGS: bool = false;
+const HANDLE_DELAY: u64 = 1500;
+const RENDER_DELAY: u64 = 500;
+const LOG_TAIL_LENGTH: usize = 3000;
 
 #[derive(Debug)]
 pub struct SudokuError {
@@ -28,6 +27,7 @@ struct Cell {
 struct Board {
     s_dim: usize,
     cells: Vec<Cell>,
+    number_candidates: Vec<Vec<Vec<HashSet<usize>>>>,
     logs: Vec<String>,
     candidate_mask: HashMap<String, HashSet<usize>>,
 }
@@ -40,100 +40,31 @@ pub struct Solution {
     pub logs: Vec<String>,
 }
 
-fn enabled(action: usize, s_dim: usize, index: usize, val: usize) -> bool {
-    let dim = s_dim * s_dim;
-    let debug_actions: Vec<usize> = vec![0, 2];
-    let debug_indices: Vec<usize> = (0..(dim * dim)).collect();
-    let debug_values: Vec<usize> = (0..dim).collect();
-    DEBUG_LOGS
-        && debug_actions.contains(&action)
-        && debug_indices.contains(&index)
-        && debug_values.contains(&val)
-}
-
 impl Board {
-    fn set(&mut self, index: usize, val: usize, reason: &str) {
+    fn set(&mut self, actor: usize, index: usize, val: usize, reason: &str) {
         if self.cells[index].val == val {
             return;
-        }
-        let dim = self.s_dim * self.s_dim;
-        if enabled(0, self.s_dim, index, val) {
-            self.logs.push(format!(
-                "[{:#?}] Cell finalisation - ({:?}, {:?}) -> {:?} Before - {:?} - [Reason -> {:?}]",
-                Utc::now().to_rfc3339(),
-                index / dim,
-                index % dim,
-                val,
-                self.cells[index].candidates,
-                reason,
-            ));
         }
         self.cells[index].val = val;
         self.cells[index].candidates.clear();
         self.cells[index].candidates.insert(val);
-        self.logs.push(format!(
-            "[{:#?}] Cell finalisation - ({:?}, {:?}) -> {:?} [Reason -> {:?}]",
-            Utc::now().to_rfc3339(),
-            index / dim,
-            index % dim,
-            val,
-            reason,
-        ));
     }
 
-    fn remove_cell_candidate(&mut self, index: usize, val: usize, reason: &str) {
+    fn remove_cell_candidate(&mut self, actor: usize, index: usize, val: usize, reason: &str) {
         let dim = self.s_dim * self.s_dim;
-        if enabled(1, self.s_dim, index, val) {
-            self.logs.push(format!(
-                "[{:#?}] Cell candidate removal - ({:?}, {:?}) -> {:?} Before - {:?} - [Reason -> {:?}]",
-                Utc::now().to_rfc3339(),
-                index / dim,
-                index % dim,
-                val,
-                self.cells[index].candidates,
-                reason,
-            ));
-        }
         self.cells[index].candidates.remove(&val);
-        if enabled(1, self.s_dim, index, val) {
-            self.logs.push(format!(
-                "[{:#?}] Cell candidate removal - ({:?}, {:?}) -> {:?} After - {:?} - [Reason -> {:?}]",
-                Utc::now().to_rfc3339(),
-                index / dim,
-                index % dim,
-                val,
-                self.cells[index].candidates,
-                reason,
-            ));
-        }
     }
 
-    fn replace_cell_candidates(&mut self, index: usize, candidates: &HashSet<usize>, reason: &str) {
+    fn replace_cell_candidates(
+        &mut self,
+        actor: usize,
+        index: usize,
+        candidates: &HashSet<usize>,
+        reason: &str,
+    ) {
         let dim = self.s_dim * self.s_dim;
-        if enabled(2, self.s_dim, index, 0) {
-            self.logs.push(format!(
-                "[{:#?}] Cell candidates replacement - ({:?}, {:?}) -> {:?} Before - {:?} - [Reason -> {:?}]",
-                Utc::now().to_rfc3339(),
-                index / dim,
-                index % dim,
-                candidates,
-                self.cells[index].candidates,
-                reason,
-            ));
-        }
         self.cells[index].candidates.clear();
         self.cells[index].candidates.extend(candidates.iter());
-        if enabled(2, self.s_dim, index, 0) {
-            self.logs.push(format!(
-                "[{:#?}] Cell candidates replacement - ({:?}, {:?}) -> {:?} After - {:?} - [Reason -> {:?}]",
-                Utc::now().to_rfc3339(),
-                index / dim,
-                index % dim,
-                candidates,
-                self.cells[index].candidates,
-                reason,
-            ));
-        }
     }
 
     fn validate(&self) {
@@ -152,7 +83,7 @@ impl Board {
         }
     }
 
-    fn pprint(&self) -> (String, bool) {
+    fn pprint(&mut self) -> (String, bool) {
         let dim = self.s_dim * self.s_dim;
         let line_sep_single = format!("\n{}\n", vec!["-"; 6 * dim + 1].join(""));
         let line_sep_double = format!("\n{}\n", vec!["⹀"; 6 * dim + 1].join(""));
@@ -190,6 +121,7 @@ impl Board {
                 },
             ));
         }
+        self.logs.sort();
         for log in self.logs.iter().rev().take(LOG_TAIL_LENGTH) {
             s.push_str(&format!("{}\n", log));
         }
@@ -291,6 +223,7 @@ fn handle_cell(board_arc_mutex: Arc<Mutex<Board>>, s_dim: usize, index: usize) {
     let dim = s_dim * s_dim;
     let dcells = dependency_cells(s_dim, index);
     loop {
+        thread::sleep(Duration::from_millis(HANDLE_DELAY));
         {
             let mut mutex_guard = match board_arc_mutex.lock() {
                 Ok(mg) => mg,
@@ -304,6 +237,7 @@ fn handle_cell(board_arc_mutex: Arc<Mutex<Board>>, s_dim: usize, index: usize) {
                 let val = board.cells[*di].val;
                 if val > 0 && board.cells[index].candidates.contains(&val) {
                     board.remove_cell_candidate(
+                        0,
                         index,
                         val,
                         &format!(
@@ -322,6 +256,7 @@ fn handle_cell(board_arc_mutex: Arc<Mutex<Board>>, s_dim: usize, index: usize) {
             if candidates.iter().count() == 1 {
                 let candidate = candidates.iter().next().unwrap();
                 board.set(
+                    0,
                     index,
                     **candidate,
                     &format!("HandleCell: Single valid candidate left - {:?}", candidates),
@@ -329,7 +264,6 @@ fn handle_cell(board_arc_mutex: Arc<Mutex<Board>>, s_dim: usize, index: usize) {
                 break;
             }
         }
-        thread::sleep(Duration::from_millis(HANDLE_DELAY));
     }
 }
 
@@ -375,6 +309,7 @@ fn handle_number(
 ) {
     let dim = s_dim * s_dim;
     loop {
+        thread::sleep(Duration::from_millis(HANDLE_DELAY));
         {
             let mut mutex_guard = match board_arc_mutex.lock() {
                 Ok(mg) => mg,
@@ -388,6 +323,7 @@ fn handle_number(
                 if candidates.iter().count() == 1 {
                     let candidate: &usize = candidates.iter().next().unwrap();
                     board.set(
+                        1,
                         *candidate,
                         number,
                         &format!(
@@ -402,20 +338,7 @@ fn handle_number(
                 }
                 break;
             }
-            candidates.retain(|c| {
-                let has = board.cells[*c].candidates.contains(&number);
-                // if !has && *c == 28 {
-                //     board.logs.push(format!(
-                //         "[{:#?}] Number logic - removing cell {:?}, {:?} for number {:?} because cell has candidates - {:?}",
-                //         Utc::now().to_rfc3339(),
-                //         *c / dim,
-                //         *c % dim,
-                //         number,
-                //         board.cells[*c].candidates,
-                //     ));
-                // }
-                has
-            });
+            candidates.retain(|c| board.cells[*c].candidates.contains(&number));
             let mut candidates_vec = candidates.iter().map(|x| *x).collect::<Vec<usize>>();
             candidates_vec.sort();
             let mask_key = candidates_vec
@@ -432,6 +355,7 @@ fn handle_number(
             if candidates.iter().count() == num_candidates.iter().count() {
                 for ci in &candidates {
                     board.replace_cell_candidates(
+                        1,
                         *ci,
                         &num_candidates,
                         &format!(
@@ -454,6 +378,7 @@ fn handle_number(
                         && board.cells[candidate].candidates.contains(&number)
                     {
                         board.remove_cell_candidate(
+                            1,
                             candidate,
                             number,
                             &format!(
@@ -478,6 +403,7 @@ fn handle_number(
                         && board.cells[candidate].candidates.contains(&number)
                     {
                         board.remove_cell_candidate(
+                            1,
                             candidate,
                             number,
                             &format!(
@@ -491,7 +417,6 @@ fn handle_number(
                 }
             }
         }
-        thread::sleep(Duration::from_millis(HANDLE_DELAY));
     }
 }
 

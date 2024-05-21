@@ -13,7 +13,7 @@ fn main() {
         if buf.ends_with("\n") {
             buf.pop();
         }
-        let solution = solve(buf);
-        println!("{:?}", solution);
+        let _ = solve(buf);
+        // println!("{:?}", solution);
     }
 }
