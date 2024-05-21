@@ -4,9 +4,7 @@ extern crate test;
 mod sudoku;
 
 // pub use sudoku::parse;
-pub use sudoku::solve;
-pub use sudoku::Solution;
-pub use sudoku::SudokuError;
+pub use sudoku::SudokuSolver;
 
 #[cfg(test)]
 mod tests {
@@ -27,6 +25,7 @@ mod tests {
             let parts = line.split(",").collect::<Vec<&str>>();
             let puzzle = parts[1];
             let soln = parts[2];
+            let solver = SudokuSolver::new(puzzle.to_string());
             let solution = solve(puzzle.to_string());
             assert_eq!(
                 soln,
