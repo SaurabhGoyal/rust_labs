@@ -84,8 +84,11 @@ impl SudokuSolver {
             data_receiver,
         )
     }
+}
 
-    pub fn close(&mut self) {
+impl Drop for SudokuSolver {
+    fn drop(&mut self) {
+        println!("Dropping SS! Releasing resource");
         {
             let mut mutex_guard = self.board_arc_mutex.lock().unwrap();
             if mutex_guard.state == 0 {
@@ -102,13 +105,6 @@ impl SudokuSolver {
     }
 }
 
-impl Drop for SudokuSolver {
-    fn drop(&mut self) {
-        println!("Dropping SS! Releasing resource");
-        self.close();
-    }
-}
-
 struct Board {
     s_dim: usize,
     cells: Vec<Cell>,
@@ -122,6 +118,9 @@ struct Board {
 
 impl Board {
     fn set(&mut self, actor: usize, index: usize, val: usize, reason: &str) {
+        if self.state > 0 {
+            return;
+        }
         if self.cells[index].val == val {
             return;
         }
@@ -146,6 +145,9 @@ impl Board {
     }
 
     fn remove_cell_candidate(&mut self, actor: usize, index: usize, val: usize, reason: &str) {
+        if self.state > 0 {
+            return;
+        }
         let dim = self.s_dim * self.s_dim;
         self.cells[index].candidates.remove(&val);
         self.post_update(Event {
@@ -168,6 +170,9 @@ impl Board {
         candidates: &HashSet<usize>,
         reason: &str,
     ) {
+        if self.state > 0 {
+            return;
+        }
         let dim = self.s_dim * self.s_dim;
         self.cells[index].candidates.clear();
         self.cells[index].candidates.extend(candidates.iter());
@@ -192,6 +197,9 @@ impl Board {
         val: usize,
         reason: &str,
     ) {
+        if self.state > 0 {
+            return;
+        }
         let dim = self.s_dim * self.s_dim;
         self.num_candidates[number - 1][cat][index].remove(&val);
         self.post_update(Event {
@@ -227,10 +235,13 @@ impl Board {
         if !self
             .control_receiver
             .recv()
-            .unwrap_or("c".to_string())
+            .unwrap_or("b".to_string())
             .eq("n")
         {
             self.state = 2;
+            return;
+        }
+        if self.state > 0 {
             return;
         }
     }
@@ -364,7 +375,7 @@ fn handle_cell(board_arc_mutex: Arc<Mutex<Board>>, s_dim: usize, index: usize) {
                         index,
                         val,
                         &format!(
-                            "HandleCell: Dependency cell ({:?}. {:?}) has this value.",
+                            "HandleCell: Dependency cell ({:?}, {:?}) has this value.",
                             di / dim,
                             di % dim
                         ),

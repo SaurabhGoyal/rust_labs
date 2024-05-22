@@ -28,10 +28,15 @@ fn main() {
                 println!("{s}");
                 break;
             }
-            // println!("// n: Next, b: Break");
-            // io::stdout().flush().unwrap();
-            // io::stdin().read_line(&mut cmd).unwrap();
-            control.send("n".to_string()).expect("control send error");
+            println!("// n: Next, b: Break");
+            io::stdout().flush().unwrap();
+            io::stdin().read_line(&mut cmd).unwrap();
+            cmd.pop();
+            if cmd.eq("n") {
+                control.send(cmd).expect("control send error");
+            } else {
+                break;
+            }
         }
     }
 }
