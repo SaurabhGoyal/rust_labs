@@ -19,22 +19,30 @@ fn main() {
         if buf.ends_with("\n") {
             buf.pop();
         }
-        let (mut solver, control, data) = SudokuSolver::new(buf);
+        let (mut _solver, control, data) = SudokuSolver::new(buf);
         for game_state in data {
             println!("Event - {:?}", game_state.event.message);
-            let mut cmd = String::new();
-            if game_state.complete {
+            if game_state.event.message.contains("finalisation") {
                 let s = game_state.p_repr;
                 println!("{s}");
-                break;
-            }
-            println!("// n: Next, b: Break");
-            io::stdout().flush().unwrap();
-            io::stdin().read_line(&mut cmd).unwrap();
-            cmd.pop();
-            if cmd.eq("n") {
-                control.send(cmd).expect("control send error");
+                if game_state.complete {
+                    break;
+                }
+                // println!("// n: Next, b: Break");
+                // let mut cmd = String::new();
+                // io::stdout().flush().unwrap();
+                // io::stdin().read_line(&mut cmd).unwrap();
+                // cmd.pop();
+                let cmd = "n".to_string();
+                if cmd.eq("n") {
+                    control.send(cmd).expect("control send error");
+                } else {
+                    break;
+                }
             } else {
+                control.send("n".to_string()).expect("control send error");
+            }
+            if game_state.complete {
                 break;
             }
         }

@@ -1,17 +1,14 @@
 use std::{
     collections::{HashMap, HashSet},
-    io::{self, Write as _},
     num::Wrapping,
-    ops::{Deref, DerefMut},
+    ops::DerefMut,
     sync::{
-        mpsc::{sync_channel, Iter, Receiver, SyncSender},
+        mpsc::{sync_channel, Receiver, SyncSender},
         Arc, Mutex,
     },
     thread::{self, JoinHandle},
     time::Duration,
 };
-
-use chrono::Utc;
 
 const HANDLE_DELAY: u64 = 200;
 
@@ -23,12 +20,14 @@ struct Cell {
 
 #[derive(Debug)]
 pub struct Event {
+    pub seq: usize,
     pub message: String,
 }
 
 #[derive(Debug)]
 pub struct GameState {
     pub event: Event,
+    pub repr: String,
     pub p_repr: String,
     pub complete: bool,
 }
@@ -51,7 +50,7 @@ impl SudokuSolver {
         // initialise channels and board
         let (data_sender, data_receiver) = sync_channel::<GameState>(1);
         let (control_sender, control_receiver) = sync_channel::<String>(1);
-        let board = parse(&buf, data_sender, control_receiver);
+        let board = Board::from(&buf, data_sender, control_receiver);
 
         // initialise threads
         let mut handles = vec![];
@@ -112,11 +111,59 @@ struct Board {
     control_receiver: Receiver<String>,
     num_candidates: Vec<Vec<Vec<HashSet<usize>>>>,
     state: u8,
-    logs: Vec<String>,
+    event_logs: Vec<String>,
+    last_event_seq: usize,
     candidate_mask: HashMap<String, HashSet<usize>>,
 }
 
 impl Board {
+    fn from(
+        buf: &str,
+        data_sender: SyncSender<GameState>,
+        control_receiver: Receiver<String>,
+    ) -> Self {
+        let parse_cell = |cv: char| -> usize {
+            if cv == '.' {
+                0
+            } else {
+                cv.to_digit(10).unwrap() as usize
+            }
+        };
+        let cell_values: Vec<usize> = buf.chars().map(parse_cell).collect();
+        let cell_count = cell_values.len();
+        let dim = (cell_count as f64).sqrt() as usize;
+        let s_dim = (dim as f64).sqrt() as usize;
+        if !is_perfect_square(cell_count) || !is_perfect_square(dim) {
+            println!("{cell_count}, {dim}, {s_dim}");
+            panic!("Invalid dimension");
+        }
+        let cells = cell_values
+            .into_iter()
+            .map(|cv| Cell {
+                val: cv,
+                fixed: cv > 0,
+                candidates: {
+                    if cv > 0 {
+                        (cv..=cv).collect()
+                    } else {
+                        (1..=dim).collect()
+                    }
+                },
+            })
+            .collect();
+        Board {
+            s_dim,
+            cells,
+            data_sender,
+            control_receiver,
+            num_candidates: vec![vec![vec![HashSet::new(); dim]; 3]; dim],
+            event_logs: vec![],
+            last_event_seq: 0,
+            candidate_mask: HashMap::new(),
+            state: 0,
+        }
+    }
+
     fn set(&mut self, actor: usize, index: usize, val: usize, reason: &str) {
         if self.state > 0 {
             return;
@@ -132,35 +179,32 @@ impl Board {
         if self.cells.iter().filter(|c| c.val == 0).count() == 0 {
             self.state = 1;
         }
-        self.post_update(Event {
-            message: format!(
-                "[{:#?}] Cell candidate finalisation - ({:?}, {:?}) -> {:?} - [Reason -> {:?}]",
-                Utc::now().to_rfc3339(),
-                index / dim,
-                index % dim,
-                val,
-                reason,
-            ),
-        });
+        self.post_update(format!(
+            "Cell candidate finalisation - ({:?}, {:?}) -> {:?} - [Reason -> {:?}]",
+            index / dim,
+            index % dim,
+            val,
+            reason,
+        ));
     }
 
     fn remove_cell_candidate(&mut self, actor: usize, index: usize, val: usize, reason: &str) {
         if self.state > 0 {
             return;
         }
+        if !self.cells[index].candidates.contains(&val) {
+            return;
+        }
         let dim = self.s_dim * self.s_dim;
         self.cells[index].candidates.remove(&val);
-        self.post_update(Event {
-            message: format!(
-                "[{:#?}] Cell candidate removal - ({:?}, {:?}) -> {:?} Updated - {:?} - [Reason -> {:?}]",
-                Utc::now().to_rfc3339(),
-                index / dim,
-                index % dim,
-                val,
-                self.cells[index].candidates,
-                reason,
-            ),
-        });
+        self.post_update(format!(
+            "Cell candidate removal - ({:?}, {:?}) -> {:?} Updated - {:?} - [Reason -> {:?}]",
+            index / dim,
+            index % dim,
+            val,
+            self.cells[index].candidates,
+            reason,
+        ));
     }
 
     fn replace_cell_candidates(
@@ -173,19 +217,19 @@ impl Board {
         if self.state > 0 {
             return;
         }
+        if self.cells[index].candidates == *candidates {
+            return;
+        }
         let dim = self.s_dim * self.s_dim;
         self.cells[index].candidates.clear();
         self.cells[index].candidates.extend(candidates.iter());
-        self.post_update(Event {
-            message: format!(
-                "[{:#?}] Cell candidate replacement - ({:?}, {:?}) -> {:?} - [Reason -> {:?}]",
-                Utc::now().to_rfc3339(),
-                index / dim,
-                index % dim,
-                self.cells[index].candidates,
-                reason,
-            ),
-        });
+        self.post_update(format!(
+            "Cell candidate replacement - ({:?}, {:?}) -> {:?} - [Reason -> {:?}]",
+            index / dim,
+            index % dim,
+            self.cells[index].candidates,
+            reason,
+        ));
     }
 
     fn remove_num_candidate(
@@ -200,12 +244,13 @@ impl Board {
         if self.state > 0 {
             return;
         }
+        if !self.num_candidates[number - 1][cat][index].contains(&val) {
+            return;
+        }
         let dim = self.s_dim * self.s_dim;
         self.num_candidates[number - 1][cat][index].remove(&val);
-        self.post_update(Event {
-            message: format!(
-                "[{:#?}] Number candidate removal - number {:?} cat - {:?} index - {:?} -> ({:?}, {:?}) Updated - {:?} - [Reason -> {:?}]",
-                Utc::now().to_rfc3339(),
+        self.post_update(format!(
+                "Number candidate removal - number - {:?} cat - {:?} index - {:?} -> ({:?}, {:?}) Updated - {:?} - [Reason -> {:?}]",
                 number,
                 cat,
                 index,
@@ -213,17 +258,22 @@ impl Board {
                 val % dim,
                 self.num_candidates[number - 1][cat][index],
                 reason,
-            ),
-        });
+            ));
     }
 
-    fn post_update(&mut self, event: Event) {
+    fn post_update(&mut self, message: String) {
+        self.event_logs.push(message.clone());
+        self.last_event_seq += 1;
         // Send data, end game if no receiver available.
         if self
             .data_sender
             .send(GameState {
-                event,
-                p_repr: self.pprint(),
+                event: Event {
+                    message,
+                    seq: self.last_event_seq,
+                },
+                repr: self.repr(),
+                p_repr: self.pretty_repr(),
                 complete: self.state == 1,
             })
             .is_err()
@@ -262,7 +312,7 @@ impl Board {
         }
     }
 
-    fn pprint(&self) -> String {
+    fn pretty_repr(&self) -> String {
         let dim = self.s_dim * self.s_dim;
         let line_sep_single = format!("\n{}\n", vec!["-"; 6 * dim + 1].join(""));
         let line_sep_double = format!("\n{}\n", vec!["⹀"; 6 * dim + 1].join(""));
@@ -299,58 +349,24 @@ impl Board {
         }
         s
     }
+
+    fn repr(&self) -> String {
+        let mut s = String::new();
+        for c in self.cells.iter() {
+            s.push(if c.val > 0 {
+                char::from_digit(c.val as u32, 10).unwrap()
+            } else {
+                '.'
+            });
+        }
+        s
+    }
 }
 
 fn is_perfect_square(n: usize) -> bool {
     let sqrt_n = (n as f64).sqrt() as usize;
     let squared = Wrapping(sqrt_n) * Wrapping(sqrt_n);
     squared.0 == n
-}
-
-fn parse(
-    buf: &str,
-    data_sender: SyncSender<GameState>,
-    control_receiver: Receiver<String>,
-) -> Board {
-    let parse_cell = |cv: char| -> usize {
-        if cv == '.' {
-            0
-        } else {
-            cv.to_digit(10).unwrap() as usize
-        }
-    };
-    let cell_values: Vec<usize> = buf.chars().map(parse_cell).collect();
-    let cell_count = cell_values.len();
-    let dim = (cell_count as f64).sqrt() as usize;
-    let s_dim = (dim as f64).sqrt() as usize;
-    if !is_perfect_square(cell_count) || !is_perfect_square(dim) {
-        println!("{cell_count}, {dim}, {s_dim}");
-        panic!("Invalid dimension");
-    }
-    let cells = cell_values
-        .into_iter()
-        .map(|cv| Cell {
-            val: cv,
-            fixed: cv > 0,
-            candidates: {
-                if cv > 0 {
-                    (cv..=cv).collect()
-                } else {
-                    (1..=dim).collect()
-                }
-            },
-        })
-        .collect();
-    Board {
-        s_dim,
-        cells,
-        data_sender,
-        control_receiver,
-        num_candidates: vec![vec![vec![HashSet::new(); dim]; 3]; dim],
-        logs: vec![],
-        candidate_mask: HashMap::new(),
-        state: 0,
-    }
 }
 
 fn handle_cell(board_arc_mutex: Arc<Mutex<Board>>, s_dim: usize, index: usize) {
