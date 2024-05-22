@@ -180,7 +180,8 @@ impl Board {
             self.state = 1;
         }
         self.post_update(format!(
-            "Cell candidate finalisation - ({:?}, {:?}) -> {:?} - [Reason -> {:?}]",
+            "[{:?}] Cell candidate finalisation - ({:?}, {:?}) -> {:?} - [Reason -> {:?}]",
+            actor,
             index / dim,
             index % dim,
             val,
@@ -198,7 +199,8 @@ impl Board {
         let dim = self.s_dim * self.s_dim;
         self.cells[index].candidates.remove(&val);
         self.post_update(format!(
-            "Cell candidate removal - ({:?}, {:?}) -> {:?} Updated - {:?} - [Reason -> {:?}]",
+            "[{:?}] Cell candidate removal - ({:?}, {:?}) -> {:?} Updated - {:?} - [Reason -> {:?}]",
+            actor,
             index / dim,
             index % dim,
             val,
@@ -207,7 +209,7 @@ impl Board {
         ));
     }
 
-    fn replace_cell_candidates(
+    fn intersect_cell_candidates(
         &mut self,
         actor: usize,
         index: usize,
@@ -217,16 +219,26 @@ impl Board {
         if self.state > 0 {
             return;
         }
-        if self.cells[index].candidates == *candidates {
+        let discardable_candidates = self.cells[index]
+            .candidates
+            .iter()
+            .map(|x| *x)
+            .filter(|c| !candidates.contains(c))
+            .collect::<Vec<usize>>();
+        if discardable_candidates.len() == 0 {
             return;
         }
         let dim = self.s_dim * self.s_dim;
-        self.cells[index].candidates.clear();
-        self.cells[index].candidates.extend(candidates.iter());
+        for dc in discardable_candidates.iter() {
+            self.cells[index].candidates.remove(dc);
+        }
         self.post_update(format!(
-            "Cell candidate replacement - ({:?}, {:?}) -> {:?} - [Reason -> {:?}]",
+            "[{:?}] Cell candidate intersection - ({:?}, {:?}) -> Based on grouping - {:?}, discarded - {:?}, updated - {:?} - [Reason -> {:?}]",
+            actor,
             index / dim,
             index % dim,
+            candidates,
+            discardable_candidates,
             self.cells[index].candidates,
             reason,
         ));
@@ -250,7 +262,8 @@ impl Board {
         let dim = self.s_dim * self.s_dim;
         self.num_candidates[number - 1][cat][index].remove(&val);
         self.post_update(format!(
-                "Number candidate removal - number - {:?} cat - {:?} index - {:?} -> ({:?}, {:?}) Updated - {:?} - [Reason -> {:?}]",
+                "[{:?}] Number candidate removal - number - {:?} cat - {:?} index - {:?} -> ({:?}, {:?}) Updated - {:?} - [Reason -> {:?}]",
+                actor,
                 number,
                 cat,
                 index,
@@ -536,9 +549,11 @@ fn handle_number(
                 }
             };
             let board = mutex_guard.deref_mut();
-            if candidates.iter().count() == mask_numbers.iter().count() {
+            if mask_numbers.iter().count() > 1
+                && candidates.iter().count() == mask_numbers.iter().count()
+            {
                 for ci in candidates.iter() {
-                    board.replace_cell_candidates(
+                    board.intersect_cell_candidates(
                         1,
                         *ci,
                         &mask_numbers,

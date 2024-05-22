@@ -9,7 +9,7 @@ fn clear_screen() {
 }
 
 fn main() {
-    'puzzle: loop {
+    loop {
         println!("Enter a sudoku, It must be of size nxn and in a comma separated value set for all cells in a single line");
         let mut buf = String::new();
         io::stdin().read_line(&mut buf).unwrap();
@@ -26,6 +26,8 @@ fn main() {
                 let s = game_state.p_repr;
                 println!("{s}");
                 if game_state.complete {
+                    let s = game_state.repr;
+                    println!("{s}");
                     break;
                 }
                 // println!("// n: Next, b: Break");
