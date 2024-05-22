@@ -13,7 +13,7 @@ use std::{
 
 use chrono::Utc;
 
-const HANDLE_DELAY: u64 = 2500;
+const HANDLE_DELAY: u64 = 200;
 
 struct Cell {
     val: usize,
@@ -26,6 +26,13 @@ pub struct Event {
     pub message: String,
 }
 
+#[derive(Debug)]
+pub struct GameState {
+    pub event: Event,
+    pub p_repr: String,
+    pub complete: bool,
+}
+
 pub struct SudokuSolver {
     buf: String,
     board_arc_mutex: Arc<Mutex<Board>>,
@@ -33,7 +40,7 @@ pub struct SudokuSolver {
 }
 
 impl SudokuSolver {
-    pub fn new(mut buf: String) -> (Self, SyncSender<String>, Receiver<Event>) {
+    pub fn new(mut buf: String) -> (Self, SyncSender<String>, Receiver<GameState>) {
         // validate
         if buf.is_empty() {
             panic!("Empty string");
@@ -42,7 +49,7 @@ impl SudokuSolver {
             buf.pop();
         }
         // initialise channels and board
-        let (data_sender, data_receiver) = sync_channel::<Event>(1);
+        let (data_sender, data_receiver) = sync_channel::<GameState>(1);
         let (control_sender, control_receiver) = sync_channel::<String>(1);
         let board = parse(&buf, data_sender, control_receiver);
 
@@ -78,15 +85,13 @@ impl SudokuSolver {
         )
     }
 
-    pub fn pprint(&self) -> (String, bool) {
-        Arc::clone(&self.board_arc_mutex)
-            .lock()
-            .unwrap()
-            .deref()
-            .pprint()
-    }
-
     pub fn close(&mut self) {
+        {
+            let mut mutex_guard = self.board_arc_mutex.lock().unwrap();
+            if mutex_guard.state == 0 {
+                mutex_guard.state = 2;
+            }
+        }
         loop {
             let handle = self.thread_handles.pop();
             if handle.is_none() {
@@ -97,10 +102,17 @@ impl SudokuSolver {
     }
 }
 
+impl Drop for SudokuSolver {
+    fn drop(&mut self) {
+        println!("Dropping SS! Releasing resource");
+        self.close();
+    }
+}
+
 struct Board {
     s_dim: usize,
     cells: Vec<Cell>,
-    data_sender: SyncSender<Event>,
+    data_sender: SyncSender<GameState>,
     control_receiver: Receiver<String>,
     num_candidates: Vec<Vec<Vec<HashSet<usize>>>>,
     state: u8,
@@ -118,6 +130,9 @@ impl Board {
         self.cells[index].val = val;
         self.cells[index].candidates.clear();
         self.cells[index].candidates.insert(val);
+        if self.cells.iter().filter(|c| c.val == 0).count() == 0 {
+            self.state = 1;
+        }
         self.post_update(Event {
             message: format!(
                 "[{:#?}] Cell candidate finalisation - ({:?}, {:?}) -> {:?} - [Reason -> {:?}]",
@@ -195,10 +210,28 @@ impl Board {
     }
 
     fn post_update(&mut self, event: Event) {
-        self.data_sender.send(event).unwrap();
-        let cmd = self.control_receiver.recv().unwrap();
-        if !cmd.eq("n") {
-            self.state = 1;
+        // Send data, end game if no receiver available.
+        if self
+            .data_sender
+            .send(GameState {
+                event,
+                p_repr: self.pprint(),
+                complete: self.state == 1,
+            })
+            .is_err()
+        {
+            self.state = 2;
+            return;
+        }
+        // Receiver command, end game if no sender available.
+        if !self
+            .control_receiver
+            .recv()
+            .unwrap_or("c".to_string())
+            .eq("n")
+        {
+            self.state = 2;
+            return;
         }
     }
 
@@ -218,17 +251,14 @@ impl Board {
         }
     }
 
-    fn pprint(&self) -> (String, bool) {
+    fn pprint(&self) -> String {
         let dim = self.s_dim * self.s_dim;
         let line_sep_single = format!("\n{}\n", vec!["-"; 6 * dim + 1].join(""));
         let line_sep_double = format!("\n{}\n", vec!["⹀"; 6 * dim + 1].join(""));
         let mut s = String::new();
-        let mut complete = true;
         s.push_str(&line_sep_double);
         for (i, cell) in self.cells.iter().enumerate() {
-            if cell.val == 0 {
-                complete = false;
-            }
+            if cell.val == 0 {}
             let val_str = if cell.val == 0 {
                 format!("     ")
             } else if cell.fixed {
@@ -256,7 +286,7 @@ impl Board {
                 },
             ));
         }
-        (s, complete)
+        s
     }
 }
 
@@ -266,7 +296,11 @@ fn is_perfect_square(n: usize) -> bool {
     squared.0 == n
 }
 
-fn parse(buf: &str, data_sender: SyncSender<Event>, control_receiver: Receiver<String>) -> Board {
+fn parse(
+    buf: &str,
+    data_sender: SyncSender<GameState>,
+    control_receiver: Receiver<String>,
+) -> Board {
     let parse_cell = |cv: char| -> usize {
         if cv == '.' {
             0
@@ -353,7 +387,7 @@ fn handle_cell(board_arc_mutex: Arc<Mutex<Board>>, s_dim: usize, index: usize) {
                 break;
             }
             if board.state > 0 {
-                break;
+                return;
             }
         }
     }
@@ -460,7 +494,11 @@ fn handle_number(
                 .entry(mask_key)
                 .or_insert(HashSet::new());
             mask_numbers.insert(number);
-            let mask_numbers = mask_numbers.clone();
+            let mut mask_numbers_clone = HashSet::new();
+            mask_numbers.iter().for_each(|x| {
+                mask_numbers_clone.insert(*x);
+            });
+            let mask_numbers = mask_numbers_clone;
             drop(board);
             drop(mutex_guard);
             let mut mutex_guard = match board_arc_mutex.lock() {
@@ -536,7 +574,7 @@ fn handle_number(
                 }
             }
             if board.state > 0 {
-                break;
+                return;
             }
         }
     }

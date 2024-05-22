@@ -20,24 +20,18 @@ fn main() {
             buf.pop();
         }
         let (mut solver, control, data) = SudokuSolver::new(buf);
-        for event in data {
-            println!("Event -- {:?}", event);
-            println!("Pprint\n{:?}\n-----\n", solver.pprint());
+        for game_state in data {
+            println!("Event - {:?}", game_state.event.message);
             let mut cmd = String::new();
-            println!("// n: Next, b: Break");
-            io::stdout().flush().unwrap();
-            io::stdin().read_line(&mut cmd).unwrap();
-            if cmd.eq("n\n") {
-                control.send("n".to_string());
-                continue;
-            } else if cmd.eq("b\n") {
-                control.send("b".to_string());
-                solver.close();
-                continue 'puzzle;
-            } else {
-                solver.close();
-                exit(0);
+            if game_state.complete {
+                let s = game_state.p_repr;
+                println!("{s}");
+                break;
             }
+            // println!("// n: Next, b: Break");
+            // io::stdout().flush().unwrap();
+            // io::stdin().read_line(&mut cmd).unwrap();
+            control.send("n".to_string()).expect("control send error");
         }
     }
 }
