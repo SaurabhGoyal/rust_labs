@@ -1,14 +1,14 @@
-use std::{fs::read, io, io::Write, process::exit};
+use std::{
+    env,
+    io::{self, Write},
+};
 
 use sudoku_solver::SudokuSolver;
 
-fn clear_screen() {
-    print!("{}[2J", 27 as char); // ANSI escape code to clear the screen
-    print!("{}[1;1H", 27 as char); // ANSI escape code to move the cursor to the top-left corner
-    io::stdout().flush().unwrap(); // Flush stdout to ensure screen is cleared immediately
-}
-
 fn main() {
+    let debug = env::args()
+        .collect::<Vec<String>>()
+        .contains(&"-d".to_string());
     loop {
         println!("Enter a sudoku, It must be of size nxn and in a comma separated value set for all cells in a single line");
         let mut buf = String::new();
@@ -30,12 +30,15 @@ fn main() {
                     println!("{s}");
                     break;
                 }
-                // println!("// n: Next, b: Break");
-                // let mut cmd = String::new();
-                // io::stdout().flush().unwrap();
-                // io::stdin().read_line(&mut cmd).unwrap();
-                // cmd.pop();
-                let cmd = "n".to_string();
+                let mut cmd = String::new();
+                if debug {
+                    println!("// n: Next");
+                    io::stdout().flush().unwrap();
+                    io::stdin().read_line(&mut cmd).unwrap();
+                    cmd.pop();
+                } else {
+                    cmd = "n".to_string();
+                }
                 if cmd.eq("n") {
                     control.send(cmd).expect("control send error");
                 } else {
