@@ -1,14 +1,14 @@
 use rayon::prelude::*;
 use std::{
     sync::{
-        mpsc::{self, SyncSender},
+        mpsc::{self, Sender},
         Arc, Mutex,
     },
     thread::{self, JoinHandle},
     time::Instant,
 };
 
-type ival = i64;
+type Ival = i64;
 
 macro_rules! time_it {
     ($name:expr, $func:expr) => {
@@ -28,16 +28,16 @@ type Job = Box<dyn FnOnce() + Send + 'static>;
 #[derive(Debug)]
 struct ThreadPool {
     threads: Vec<JoinHandle<()>>,
-    sender: Option<SyncSender<Job>>,
+    sender: Option<Sender<Job>>,
 }
 
 impl ThreadPool {
     fn new(cap: usize) -> Self {
         assert_ne!(cap, 0);
-        let (sender, receiver) = mpsc::sync_channel::<Job>(1000);
+        let (sender, receiver) = mpsc::channel::<Job>();
         let receiver_mutex = Arc::new(Mutex::new(receiver));
         let mut threads: Vec<JoinHandle<()>> = Vec::with_capacity(cap);
-        for id in 0..cap {
+        for _id in 0..cap {
             let receiver_clone = Arc::clone(&receiver_mutex);
             threads.push(thread::spawn(move || loop {
                 let job = receiver_clone.lock().unwrap().recv();
@@ -71,13 +71,13 @@ impl Drop for ThreadPool {
     }
 }
 
-fn adder_thread(counter_mutex_arc: Arc<Mutex<ival>>, num: ival) {
+fn adder_thread(counter_mutex_arc: Arc<Mutex<Ival>>, num: Ival) {
     *counter_mutex_arc.lock().unwrap() += num;
 }
 
-fn add_using_threads(nums: &Vec<ival>) -> ival {
+fn add_using_threads(pool_size: usize, nums: &Vec<Ival>) -> Ival {
     let counter_arc_mutex = Arc::new(Mutex::new(0));
-    let pool: ThreadPool = ThreadPool::new(128);
+    let pool: ThreadPool = ThreadPool::new(pool_size);
     for num in nums {
         let counter_clone = Arc::clone(&counter_arc_mutex);
         let num_clone = *num;
@@ -87,12 +87,18 @@ fn add_using_threads(nums: &Vec<ival>) -> ival {
     return *counter_arc_mutex.lock().unwrap();
 }
 
-fn add_using_rayon(nums: &Vec<ival>) -> ival {
+fn add_using_rayon(nums: &Vec<Ival>) -> Ival {
     nums.par_iter().sum()
 }
 
 fn main() {
-    let nums: Vec<ival> = (2..=2000000).into_iter().collect();
-    time_it!("Threads", add_using_threads(&nums));
+    let nums: Vec<Ival> = (2..=2000000).into_iter().collect();
     time_it!("Rayon", add_using_rayon(&nums));
+    // Interestingly the best time is when we are using a single thread in the pool.
+    for ps in (0..=12).map(|p| 2_i32.pow(p)) {
+        time_it!(
+            format!("Threads with pool-size of {}", ps),
+            add_using_threads(ps as usize, &nums)
+        );
+    }
 }
