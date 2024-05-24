@@ -10,7 +10,7 @@ fn main() {
         .collect::<Vec<String>>()
         .contains(&"-d".to_string());
     loop {
-        println!("Enter a sudoku, It must be of size nxn and in a comma separated value set for all cells in a single line");
+        println!("Enter a sudoku, It must be of size n x n, one char per cell from top row to bottom row and left to right for each row, use '.' for empty cell.");
         let mut buf = String::new();
         io::stdin().read_line(&mut buf).unwrap();
         if buf.is_empty() {

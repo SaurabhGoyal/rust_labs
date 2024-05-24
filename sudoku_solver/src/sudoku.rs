@@ -473,11 +473,9 @@ fn handle_number(
     index: usize,
 ) {
     let dim = s_dim * s_dim;
-    let mut mutex_guard = board_arc_mutex.lock().unwrap();
-    let board = mutex_guard.deref_mut();
+    let mut board = board_arc_mutex.lock().unwrap();
     board.num_candidates[number - 1][cat][index] = find_candidate_cells(s_dim, cat, index);
     drop(board);
-    drop(mutex_guard);
     loop {
         thread::sleep(Duration::from_millis(HANDLE_DELAY));
         {
@@ -539,7 +537,6 @@ fn handle_number(
                 mask_numbers_clone.insert(*x);
             });
             let mask_numbers = mask_numbers_clone;
-            drop(board);
             drop(mutex_guard);
             let mut mutex_guard = match board_arc_mutex.lock() {
                 Ok(mg) => mg,
