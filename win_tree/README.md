@@ -15,3 +15,17 @@ This command is useful for scenarios where making a complete backup of complete 
 - `cargo install win_tree`
 - `win_tree <path> -d <depth> -e "<pattern>" > snapshot.json`
 ```
+
+# Local results
+Result on running on my external HDD with cap 8 TB and having data of ~4.2 TB across ~15600 files - Built snapshot in 74.27 seconds.
+```
+saurabh@Saurabh-Raider:/mnt/d/Saurabh/Personal/rust_labs$ cargo run -p win_tree -- /mnt/f/stuff/ -e "^(?:\..*|doc|debug)" > snapshot.json
+warning: virtual workspace defaulting to `resolver = "1"` despite one or more workspace members being on edition 2021 which implies `resolver = "2"`
+note: to keep the current resolver, specify `workspace.resolver = "1"` in the workspace root's manifest
+note: to use the edition 2021 resolver, specify `workspace.resolver = "2"` in the workspace root's manifest
+note: for more details see https://doc.rust-lang.org/cargo/reference/resolver.html#resolver-versions
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.36s
+     Running `target/debug/win_tree /mnt/f/stuff/ -e '^(?:\..*|doc|debug)'`
+Built in **74.273552703s**
+Serialised in **134.912809ms**
+```

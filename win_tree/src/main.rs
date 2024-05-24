@@ -19,11 +19,15 @@
 
 mod cli;
 mod tree;
-use std::env;
+use std::{env, time::Instant};
 
 fn main() {
     let config = tree::Config::build_from_args(env::args());
+    let start = Instant::now();
     let root = tree::build(config).unwrap();
+    eprintln!("Built in {:?}", start.elapsed());
+    let start = Instant::now();
     let root = serde_json::to_string_pretty(&root).unwrap();
+    eprintln!("Serialised in {:?}", start.elapsed());
     println!("{root}");
 }
