@@ -95,18 +95,42 @@ impl Game {
         }
     }
 
+    fn reset_bat_and_ball(&mut self) {
+        // Reset ball
+        let (bl_i, bl_j) = self.ball.index;
+        let (bl_ni, bl_nj) = (GRID_HEIGHT - 2, GRID_WIDTH / 2);
+        self.grid[bl_i as usize][bl_j as usize].state = State::Empty;
+        self.grid[bl_ni as usize][bl_nj as usize].state = State::Ball;
+        self.ball.index = (bl_ni, bl_nj);
+        self.ball.speed = 0;
+        self.ball.direction = (-1, -1);
+
+        // Reset bat
+        let (bt_i, bt_j) = self.bat.index;
+        let (bt_ni, bt_nj) = (GRID_HEIGHT - 1, (GRID_WIDTH / 2 - BAT_LENGTH as i8 / 2));
+        for j in bt_j..(bt_j + BAT_LENGTH as i8) {
+            self.grid[bt_i as usize][j as usize].state = State::Empty;
+        }
+        for j in bt_nj..(bt_nj + BAT_LENGTH as i8) {
+            self.grid[bt_ni as usize][j as usize].state = State::Bat;
+        }
+    }
+
     fn next(&mut self) {
         if self.ball.speed == 0 {
             return;
         }
         let (i, j) = self.ball.index;
         let (ni, nj) = (i + self.ball.direction.0, j + self.ball.direction.1);
-        let is_wall = || ni < 0 || ni >= GRID_HEIGHT || nj < 0 || nj > GRID_WIDTH;
+        let is_wall = || ni < 0 || ni >= GRID_HEIGHT || nj < 0 || nj >= GRID_WIDTH;
         let is_brick = || self.grid[ni as usize][nj as usize].state == State::Brick;
         let is_bat = || self.grid[ni as usize][nj as usize].state == State::Bat;
         if is_wall() {
-            if ni < 0 || ni >= GRID_HEIGHT {
+            if ni < 0 {
                 self.ball.direction = (-1 * self.ball.direction.0, self.ball.direction.1);
+            }
+            if ni >= GRID_HEIGHT {
+                self.reset_bat_and_ball();
             }
             if nj < 0 || nj >= GRID_WIDTH {
                 self.ball.direction = (self.ball.direction.0, -1 * self.ball.direction.1);
@@ -120,13 +144,14 @@ impl Game {
             if self.grid[ni as usize][j as usize].state != State::Brick {
                 self.ball.direction = (self.ball.direction.0, -1 * self.ball.direction.1);
             }
+            self.grid[ni as usize][nj as usize].state = State::Empty;
             return;
         }
         if is_bat() {
-            if self.grid[i as usize][nj as usize].state != State::Brick {
+            if self.grid[i as usize][nj as usize].state != State::Bat {
                 self.ball.direction = (-1 * self.ball.direction.0, self.ball.direction.1);
             }
-            if self.grid[ni as usize][j as usize].state != State::Brick {
+            if self.grid[ni as usize][j as usize].state != State::Bat {
                 self.ball.direction = (self.ball.direction.0, -1 * self.ball.direction.1);
             }
             return;
