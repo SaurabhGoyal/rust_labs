@@ -1,13 +1,16 @@
+use console::Term;
 use std::{
     io::{self, Write as _},
-    thread::sleep,
+    process::exit,
+    sync::{Arc, Mutex},
+    thread::{sleep, spawn},
     time::Duration,
 };
 
 const REFRESH_RATE_MS: usize = 50;
-const GRID_HEIGHT: i8 = 20;
+const GRID_HEIGHT: i8 = 30;
 const GRID_WIDTH: i8 = 100;
-const BAT_LENGTH: usize = 10;
+const BAT_LENGTH: usize = 16;
 
 #[derive(PartialEq, Eq, Clone)]
 enum State {
@@ -51,6 +54,7 @@ struct Game {
     grid: Vec<Vec<Cell>>,
     ball: Ball,
     bat: Bat,
+    last_cmd: String,
 }
 
 impl Game {
@@ -58,6 +62,7 @@ impl Game {
         let mut cells: Vec<Vec<Cell>> = Vec::with_capacity(GRID_HEIGHT as usize);
         let mut ball_index: Pair = (-1, -1);
         let mut bat_index: Pair = (-1, -1);
+        let bat_j = GRID_WIDTH / 2 - BAT_LENGTH as i8 / 2;
         for i in 0..GRID_HEIGHT {
             let mut row = Vec::with_capacity(GRID_WIDTH as usize);
             for j in 0..GRID_WIDTH {
@@ -67,10 +72,7 @@ impl Game {
                 } else if i == GRID_HEIGHT - 2 && j == GRID_WIDTH / 2 {
                     state = State::Ball;
                     ball_index = (i, j);
-                } else if i == GRID_HEIGHT - 1
-                    && j >= (GRID_WIDTH / 2 - BAT_LENGTH as i8 / 2)
-                    && j <= (GRID_WIDTH / 2 + BAT_LENGTH as i8 / 2)
-                {
+                } else if i == GRID_HEIGHT - 1 && j >= bat_j && j < bat_j + BAT_LENGTH as i8 {
                     state = State::Bat;
                     bat_index = (i, (GRID_WIDTH / 2 - BAT_LENGTH as i8 / 2));
                 }
@@ -92,28 +94,33 @@ impl Game {
                 index: bat_index,
                 length: BAT_LENGTH,
             },
+            last_cmd: String::new(),
         }
     }
 
-    fn reset_bat_and_ball(&mut self) {
-        // Reset ball
-        let (bl_i, bl_j) = self.ball.index;
-        let (bl_ni, bl_nj) = (GRID_HEIGHT - 2, GRID_WIDTH / 2);
-        self.grid[bl_i as usize][bl_j as usize].state = State::Empty;
-        self.grid[bl_ni as usize][bl_nj as usize].state = State::Ball;
-        self.ball.index = (bl_ni, bl_nj);
-        self.ball.speed = 0;
-        self.ball.direction = (-1, -1);
+    fn set_ball(&mut self, index: Pair, speed: u8, direction: Pair) {
+        let (i, j) = self.ball.index;
+        let (ni, nj) = (index.0, index.1);
+        self.grid[i as usize][j as usize].state = State::Empty;
+        self.grid[ni as usize][nj as usize].state = State::Ball;
+        self.ball.index = (ni, nj);
+        self.ball.speed = speed;
+        self.ball.direction = direction;
+    }
 
-        // Reset bat
-        let (bt_i, bt_j) = self.bat.index;
-        let (bt_ni, bt_nj) = (GRID_HEIGHT - 1, (GRID_WIDTH / 2 - BAT_LENGTH as i8 / 2));
-        for j in bt_j..(bt_j + BAT_LENGTH as i8) {
-            self.grid[bt_i as usize][j as usize].state = State::Empty;
+    fn set_bat(&mut self, index: Pair) {
+        let (i, j) = self.bat.index;
+        let (ni, nj) = (index.0, index.1);
+        if ni < 0 || ni >= GRID_HEIGHT || nj < 0 || nj >= GRID_WIDTH - BAT_LENGTH as i8 {
+            return;
         }
-        for j in bt_nj..(bt_nj + BAT_LENGTH as i8) {
-            self.grid[bt_ni as usize][j as usize].state = State::Bat;
+        for k in j..(j + BAT_LENGTH as i8) {
+            self.grid[i as usize][k as usize].state = State::Empty;
         }
+        for k in nj..(nj + BAT_LENGTH as i8) {
+            self.grid[ni as usize][k as usize].state = State::Bat;
+        }
+        self.bat.index = (ni, nj);
     }
 
     fn next(&mut self) {
@@ -130,7 +137,8 @@ impl Game {
                 self.ball.direction = (-1 * self.ball.direction.0, self.ball.direction.1);
             }
             if ni >= GRID_HEIGHT {
-                self.reset_bat_and_ball();
+                self.set_ball((GRID_HEIGHT - 2, GRID_WIDTH / 2), 0, (-1, -1));
+                self.set_bat((GRID_HEIGHT - 1, GRID_WIDTH / 2 - BAT_LENGTH as i8 / 2));
             }
             if nj < 0 || nj >= GRID_WIDTH {
                 self.ball.direction = (self.ball.direction.0, -1 * self.ball.direction.1);
@@ -169,6 +177,8 @@ impl Game {
             }
             s.push('\n')
         }
+        s.push_str(&self.last_cmd);
+        s.push('\n');
         s
     }
 }
@@ -182,10 +192,50 @@ fn clear_screen() {
 fn main() {
     let mut g = Game::new();
     g.ball.speed = 1;
+    let g = Arc::new(Mutex::new(g));
+    let gc = Arc::clone(&g);
+    let rh = spawn(move || render(gc));
+    let gc = Arc::clone(&g);
+    let rih = spawn(move || read_input(gc));
+    rh.join().unwrap();
+    rih.join().unwrap();
+}
+
+fn render(game: Arc<Mutex<Game>>) {
     loop {
-        clear_screen();
-        println!("{}", g.view());
-        g.next();
+        {
+            let mut g = game.lock().unwrap();
+            clear_screen();
+            println!("{}", g.view());
+            g.next();
+        }
         sleep(Duration::from_millis(REFRESH_RATE_MS as u64));
+    }
+}
+
+fn read_input(game: Arc<Mutex<Game>>) -> ! {
+    let stdout = Term::buffered_stdout();
+    loop {
+        {
+            if let Ok(character) = stdout.read_char() {
+                let mut g = game.lock().unwrap();
+                g.last_cmd = String::from(format!("User pressed {character}"));
+                match character {
+                    ' ' => {
+                        let (ni, nj) = (g.ball.index.0, g.ball.index.1);
+                        g.set_ball((ni, nj), 1, (-1, -1));
+                    }
+                    'a' => {
+                        let (ni, nj) = (g.bat.index.0, g.bat.index.1 - 1);
+                        g.set_bat((ni, nj));
+                    }
+                    'd' => {
+                        let (ni, nj) = (g.bat.index.0, g.bat.index.1 + 1);
+                        g.set_bat((ni, nj));
+                    }
+                    _ => exit(0),
+                }
+            }
+        }
     }
 }
