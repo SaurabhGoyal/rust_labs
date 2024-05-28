@@ -538,6 +538,7 @@ name = "unbricked"
 version = "0.1.0"
 dependencies = [
  "console",
+ "rand",
 ]
 
 [[package]]
