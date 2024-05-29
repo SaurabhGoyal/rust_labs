@@ -71,7 +71,7 @@ impl Game {
             let mut row = Vec::with_capacity(GRID_WIDTH as usize);
             for j in 0..GRID_WIDTH {
                 let mut state = State::Empty;
-                if i >= 3 && i < 3 + BRICK_ROW_COUNT {
+                if (3..3 + BRICK_ROW_COUNT).contains(&i) {
                     state = State::Brick;
                     brick_count += 1;
                 } else if i == GRID_HEIGHT - 2 && j == GRID_WIDTH / 2 {
@@ -120,7 +120,7 @@ impl Game {
     fn set_bat(&mut self, index: Pair) {
         let (i, j) = self.bat.index;
         let (ni, nj) = (index.0, index.1);
-        if ni < 0 || ni >= GRID_HEIGHT || nj < 0 || nj >= GRID_WIDTH - BAT_LENGTH as i8 {
+        if !(0..GRID_HEIGHT).contains(&ni) || nj < 0 || nj >= GRID_WIDTH - BAT_LENGTH as i8 {
             return;
         }
         for k in j..(j + BAT_LENGTH as i8) {
@@ -142,38 +142,38 @@ impl Game {
         }
         let (i, j) = self.ball.index;
         let (ni, nj) = (i + self.ball.direction.0, j + self.ball.direction.1);
-        let is_wall = || ni < 0 || ni >= GRID_HEIGHT || nj < 0 || nj >= GRID_WIDTH;
+        let is_wall = || !(0..GRID_HEIGHT).contains(&ni) || !(0..GRID_WIDTH).contains(&nj);
         let is_brick = || self.grid[ni as usize][nj as usize].state == State::Brick;
         let is_bat = || self.grid[ni as usize][nj as usize].state == State::Bat;
         if is_wall() {
             if ni < 0 {
-                self.ball.direction = (-1 * self.ball.direction.0, self.ball.direction.1);
+                self.ball.direction = (-self.ball.direction.0, self.ball.direction.1);
             }
             if ni >= GRID_HEIGHT {
                 self.set_ball((GRID_HEIGHT - 2, GRID_WIDTH / 2), 0, (-1, -1));
                 self.set_bat((GRID_HEIGHT - 1, GRID_WIDTH / 2 - BAT_LENGTH as i8 / 2));
             }
-            if nj < 0 || nj >= GRID_WIDTH {
-                self.ball.direction = (self.ball.direction.0, -1 * self.ball.direction.1);
+            if !(0..GRID_WIDTH).contains(&nj) {
+                self.ball.direction = (self.ball.direction.0, -self.ball.direction.1);
             }
             return;
         }
         if is_brick() {
             if self.grid[i as usize][nj as usize].state != State::Brick {
-                self.ball.direction = (-1 * self.ball.direction.0, self.ball.direction.1);
+                self.ball.direction = (-self.ball.direction.0, self.ball.direction.1);
             }
             if self.grid[ni as usize][j as usize].state != State::Brick {
-                self.ball.direction = (self.ball.direction.0, -1 * self.ball.direction.1);
+                self.ball.direction = (self.ball.direction.0, -self.ball.direction.1);
             }
             self.grid[ni as usize][nj as usize].state = State::Empty;
             return;
         }
         if is_bat() {
             if self.grid[i as usize][nj as usize].state != State::Bat {
-                self.ball.direction = (-1 * self.ball.direction.0, self.ball.direction.1);
+                self.ball.direction = (-self.ball.direction.0, self.ball.direction.1);
             }
             if self.grid[ni as usize][j as usize].state != State::Bat {
-                self.ball.direction = (self.ball.direction.0, -1 * self.ball.direction.1);
+                self.ball.direction = (self.ball.direction.0, -self.ball.direction.1);
             }
             return;
         }
@@ -240,7 +240,7 @@ fn read_input(game: Arc<Mutex<Game>>) -> ! {
         {
             if let Ok(character) = stdout.read_char() {
                 let mut g = game.lock().unwrap();
-                g.last_cmd = String::from(format!("User pressed {character}"));
+                g.last_cmd = format!("User pressed {character}");
                 let mut dir = (rng.gen_range(-2..=-1), rng.gen_range(-2..=2));
                 if dir.1 == 0 {
                     dir.1 = 1;

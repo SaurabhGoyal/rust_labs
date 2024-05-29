@@ -16,14 +16,14 @@ pub struct Config {
 pub fn parse_cmd(input: &str) -> Option<Command> {
     dbg!(input);
     let input = input.trim();
-    if input.len() == 0 {
+    if input.is_empty() {
         return None;
     }
     let mut parts = input.split_whitespace().map(|x| x.trim());
     let bin = parts.next().unwrap();
     let mut cmd = Command::new(bin);
     cmd.args(parts);
-    return Some(cmd);
+    Some(cmd)
 }
 
 pub fn execute(config: &mut Config, mut command: Command) {
@@ -36,9 +36,7 @@ pub fn execute(config: &mut Config, mut command: Command) {
         PATH_CMD => {
             config.paths = command
                 .get_args()
-                .map(|s| s.to_str())
-                .filter(|s| s.is_some())
-                .map(|s| s.unwrap())
+                .filter_map(|s| s.to_str())
                 .map(|s| s.to_string())
                 .collect();
         }

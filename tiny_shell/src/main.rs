@@ -24,10 +24,8 @@ fn main() {
             continue;
         }
         let res: Vec<()> = input
-            .split("&")
-            .map(|i| shell::parse_cmd(i))
-            .filter(|c| c.is_some())
-            .map(|c| c.unwrap())
+            .split('&')
+            .filter_map(shell::parse_cmd)
             .map(|c| shell::execute(&mut config, c))
             .collect();
         dbg!(res);
