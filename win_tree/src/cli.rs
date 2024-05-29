@@ -19,20 +19,18 @@ impl Config {
                 break;
             }
             let item = item.unwrap();
-            if !item.starts_with("-") {
+            if !item.starts_with('-') {
                 panic!("each arg must start with a hyphen");
+            } else if item.eq(ARG_DEPTH_KEY) {
+                config.depth_check = Some(args.next().unwrap().parse::<u32>().unwrap());
+            } else if item.eq(ARG_EXCLUDE_KEY) {
+                let pattern = args.next().unwrap();
+                let _ = Regex::new(&pattern).unwrap();
+                config.exclude_pattern = Some(pattern);
             } else {
-                if item.eq(ARG_DEPTH_KEY) {
-                    config.depth_check = Some(args.next().unwrap().parse::<u32>().unwrap());
-                } else if item.eq(ARG_EXCLUDE_KEY) {
-                    let pattern = args.next().unwrap();
-                    let _ = Regex::new(&pattern).unwrap();
-                    config.exclude_pattern = Some(pattern);
-                } else {
-                    panic!("invalid arg")
-                }
+                panic!("invalid arg")
             }
         }
-        return config;
+        config
     }
 }

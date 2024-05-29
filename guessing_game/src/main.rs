@@ -26,5 +26,5 @@ fn take_guess() -> u32 {
         .trim()
         .parse()
         .expect("Not a number (secret was {secret_number}).");
-    return buff;
+    buff
 }

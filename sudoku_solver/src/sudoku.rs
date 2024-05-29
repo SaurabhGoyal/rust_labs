@@ -222,10 +222,10 @@ impl Board {
         let discardable_candidates = self.cells[index]
             .candidates
             .iter()
-            .map(|x| *x)
+            .copied()
             .filter(|c| !candidates.contains(c))
             .collect::<Vec<usize>>();
-        if discardable_candidates.len() == 0 {
+        if discardable_candidates.is_empty() {
             return;
         }
         let dim = self.s_dim * self.s_dim;
@@ -302,10 +302,6 @@ impl Board {
             .eq("n")
         {
             self.state = 2;
-            return;
-        }
-        if self.state > 0 {
-            return;
         }
     }
 
@@ -332,9 +328,8 @@ impl Board {
         let mut s = String::new();
         s.push_str(&line_sep_double);
         for (i, cell) in self.cells.iter().enumerate() {
-            if cell.val == 0 {}
             let val_str = if cell.val == 0 {
-                format!("     ")
+                "     ".to_string()
             } else if cell.fixed {
                 format!("`{: ^3}`", cell.val)
             } else {
@@ -416,7 +411,7 @@ fn handle_cell(board_arc_mutex: Arc<Mutex<Board>>, s_dim: usize, index: usize) {
                 .iter()
                 .filter(|x| **x > usize::MIN)
                 .collect();
-            if candidates.iter().count() == 1 {
+            if candidates.len() == 1 {
                 let candidate = candidates.iter().next().unwrap();
                 board.set(
                     0,
@@ -489,7 +484,7 @@ fn handle_number(
             let board = mutex_guard.deref_mut();
             let mut candidates = board.num_candidates[number - 1][cat][index]
                 .iter()
-                .map(|x| *x)
+                .copied()
                 .collect::<Vec<usize>>();
             candidates.sort();
             if candidates.len() <= 1 {
@@ -546,9 +541,7 @@ fn handle_number(
                 }
             };
             let board = mutex_guard.deref_mut();
-            if mask_numbers.iter().count() > 1
-                && candidates.iter().count() == mask_numbers.iter().count()
-            {
+            if mask_numbers.len() > 1 && candidates.len() == mask_numbers.len() {
                 for ci in candidates.iter() {
                     board.intersect_cell_candidates(
                         1,

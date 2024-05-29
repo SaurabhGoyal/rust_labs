@@ -15,7 +15,7 @@ mod tests {
             // "/mnt/d/Saurabh/Personal/rust_labs/sudoku_solver/src/test_data/sudoku_set.csv",
         )
         .unwrap()
-        .split("\n")
+        .split('\n')
         .enumerate()
         {
             let parts = line.split(",").collect::<Vec<&str>>();

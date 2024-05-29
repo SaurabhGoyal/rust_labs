@@ -42,8 +42,8 @@ impl ThreadPool {
             let receiver_clone = Arc::clone(&receiver_mutex);
             threads.push(thread::spawn(move || loop {
                 let job = receiver_clone.lock().unwrap().recv();
-                if job.is_ok() {
-                    job.unwrap()();
+                if let Ok(_job) = job {
+                    _job();
                 } else {
                     return;
                 }
@@ -112,7 +112,7 @@ fn add_using_async(nums: &Vec<Ival>) -> Ival {
 }
 
 fn main() {
-    let nums: Vec<Ival> = (2..=200000000).into_iter().collect();
+    let nums: Vec<Ival> = (2..=200000000).collect();
     time_it!("Rayon", add_using_rayon(&nums));
     // Interestingly the best time is when we are using a single thread in the pool.
     for ps in (0..=4).map(|p| 2_i32.pow(p)) {
