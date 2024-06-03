@@ -618,6 +618,7 @@ name = "win_tree"
 version = "0.1.2"
 dependencies = [
  "futures",
+ "rayon",
  "regex",
  "serde",
  "serde_json",

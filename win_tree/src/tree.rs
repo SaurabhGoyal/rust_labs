@@ -1,8 +1,11 @@
 use futures::executor::block_on;
+use rayon::prelude::*;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io;
+use std::ops::Deref;
+use std::ops::DerefMut;
 use std::path::Path;
 use std::sync::mpsc::channel;
 use std::sync::mpsc::Sender;
@@ -55,12 +58,13 @@ pub fn build(config: Config) -> Result<TreeNode, io::Error> {
         }
         None => None,
     };
-    return block_on(_build(
-        Path::new(dir),
-        config.depth_check,
-        exclude_pattern,
-        0,
-    ));
+    // block_on(_build(
+    //     Path::new(dir),
+    //     config.depth_check,
+    //     exclude_pattern,
+    //     0,
+    // ))
+    _build_par(Path::new(dir), config.depth_check, exclude_pattern, 0)
 }
 
 async fn _build(
@@ -102,6 +106,57 @@ async fn _build(
         size_in_bytes: total_size,
         children,
     });
+}
+
+fn _build_par(
+    dir: &Path,
+    depth_check: Option<u32>,
+    exclude_pattern: Option<&str>,
+    depth: u32,
+) -> Result<TreeNode, io::Error> {
+    let mut node = TreeNode {
+        name: String::from(dir.file_name().unwrap().to_str().unwrap()),
+        is_file: dir.is_file(),
+        size_in_bytes: None,
+        children: vec![],
+    };
+    if dir.is_file() {
+        node.size_in_bytes = Some(dir.metadata()?.len());
+    } else if dir.is_dir() && (depth_check.is_none() || depth < depth_check.unwrap()) {
+        let node_arc = Arc::new(Mutex::new(node));
+
+        fs::read_dir(dir)?
+            .par_bridge()
+            .filter(|e| e.is_ok())
+            .map(|e| e.unwrap().path())
+            .filter(|e| {
+                exclude_pattern.is_none()
+                    || !Regex::new(exclude_pattern.unwrap())
+                        .unwrap()
+                        .is_match(e.file_name().unwrap().to_str().unwrap())
+            })
+            .map(|e| (e, Arc::clone(&node_arc)))
+            .for_each(move |(e, parent)| {
+                let entry_node =
+                    _build_par(e.as_path(), depth_check, exclude_pattern, depth + 1).unwrap();
+                // Calculate size only if each of the children also has a calculated size.
+                {
+                    let mut parent = parent.lock().unwrap();
+                    parent.size_in_bytes = match (parent.size_in_bytes, entry_node.size_in_bytes) {
+                        (Some(curr_size), Some(child_size)) => Some(curr_size + child_size),
+                        _ => None,
+                    };
+                    parent.children.push(entry_node);
+                }
+            });
+        node = Arc::try_unwrap(node_arc)
+            .ok()
+            .unwrap()
+            .into_inner()
+            .ok()
+            .unwrap();
+    }
+    Ok(node)
 }
 
 type Job = Box<dyn FnOnce() + Send + 'static>;
