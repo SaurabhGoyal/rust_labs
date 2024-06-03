@@ -16,7 +16,7 @@ fn main() {
         if buf.is_empty() {
             break;
         }
-        if buf.ends_with("\n") {
+        if buf.ends_with('\n') {
             buf.pop();
         }
         let (mut _solver, control, data) = SudokuSolver::new(buf);

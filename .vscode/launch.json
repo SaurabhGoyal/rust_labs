@@ -206,7 +206,13 @@
                     "kind": "bin"
                 }
             },
-            "args": [],
+            "args": [
+                "target",
+                "-e",
+                "^(?:\\..*|doc|debug)",
+                "-d",
+                "1"
+            ],
             "cwd": "${workspaceFolder}"
         },
         {

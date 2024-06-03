@@ -1,8 +1,15 @@
+use futures::executor::block_on;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io;
 use std::path::Path;
+use std::sync::mpsc::channel;
+use std::sync::mpsc::Sender;
+use std::sync::Arc;
+use std::sync::Mutex;
+use std::thread;
+use std::thread::JoinHandle;
 
 /// Represents a node in a tree structure, used to represent directories and files.
 #[derive(Serialize, Deserialize, Debug)]
@@ -48,10 +55,15 @@ pub fn build(config: Config) -> Result<TreeNode, io::Error> {
         }
         None => None,
     };
-    return _build(Path::new(dir), config.depth_check, exclude_pattern, 0);
+    return block_on(_build(
+        Path::new(dir),
+        config.depth_check,
+        exclude_pattern,
+        0,
+    ));
 }
 
-fn _build(
+async fn _build(
     dir: &Path,
     depth_check: Option<u32>,
     exclude_pattern: Option<&str>,
@@ -74,7 +86,8 @@ fn _build(
             {
                 continue;
             }
-            let entry_node = _build(entry, depth_check, exclude_pattern, depth + 1)?;
+            let entry_node =
+                Box::pin(_build(entry, depth_check, exclude_pattern, depth + 1)).await?;
             // Calculate size only if each of the children also has a calculated size.
             total_size = match (total_size, entry_node.size_in_bytes) {
                 (Some(curr_size), Some(child_size)) => Some(curr_size + child_size),
@@ -89,4 +102,48 @@ fn _build(
         size_in_bytes: total_size,
         children,
     });
+}
+
+type Job = Box<dyn FnOnce() + Send + 'static>;
+
+pub struct ThreadPool {
+    sender: Option<Sender<Job>>,
+    handles: Vec<JoinHandle<()>>,
+}
+
+impl ThreadPool {
+    pub fn new(cap: usize) -> Self {
+        assert_ne!(cap, 0);
+        let (sender, receiver) = channel::<Job>();
+        let receiver = Arc::new(Mutex::new(receiver));
+        let mut handles = vec![];
+        for _i in 0..cap {
+            let rc = Arc::clone(&receiver);
+            handles.push(thread::spawn(move || {
+                while let Ok(job) = rc.lock().unwrap().recv() {
+                    job();
+                }
+            }));
+        }
+        ThreadPool {
+            sender: Some(sender),
+            handles,
+        }
+    }
+
+    pub fn add<F>(&self, f: F)
+    where
+        F: FnOnce() + Send + 'static,
+    {
+        self.sender.as_ref().unwrap().send(Box::new(f)).unwrap();
+    }
+}
+
+impl Drop for ThreadPool {
+    fn drop(&mut self) {
+        self.sender.take();
+        while let Some(handle) = self.handles.pop() {
+            handle.join().unwrap();
+        }
+    }
 }
