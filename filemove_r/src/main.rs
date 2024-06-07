@@ -9,17 +9,28 @@ use std::{
 fn main() {
     let args = env::args().collect::<Vec<String>>();
     let (mover, event_receiver) = Mover::new();
-    thread::spawn(move || {
+    let handle = thread::spawn(move || {
         let args = args;
         mover.transfer(String::from(&args[1]), String::from(&args[2]));
     });
     while let Ok(event) = event_receiver.recv() {
-        println!("{:?}", event.message);
+        if event.event_type == EventType::CompletedCopying {
+            println!("{:?}", event);
+        }
     }
+    handle.join().unwrap();
 }
 
+#[derive(Debug, PartialEq, Eq)]
+enum EventType {
+    StartedCopying,
+    CompletedCopying,
+}
+
+#[derive(Debug)]
 struct Event {
-    message: String,
+    source: String,
+    event_type: EventType,
 }
 
 struct Mover {
@@ -35,7 +46,8 @@ impl Mover {
     fn transfer(&self, source: String, dest_dir: String) {
         self.event_sender
             .send(Event {
-                message: format!("Transfer {:?} -> {:?}", source, dest_dir),
+                source: source.clone(),
+                event_type: EventType::StartedCopying,
             })
             .unwrap();
         let source_path = Path::new(&source)
@@ -49,11 +61,6 @@ impl Mover {
             fs::create_dir(dest_path.clone()).expect(
                 "Destination either already exists or does not have the given parent path.",
             );
-            self.event_sender
-                .send(Event {
-                    message: format!("Created dir {:?}", dest_path),
-                })
-                .unwrap();
             for child in fs::read_dir(source_path).unwrap() {
                 let child = child.unwrap();
                 self.transfer(
@@ -83,7 +90,8 @@ impl Mover {
         }
         self.event_sender
             .send(Event {
-                message: format!("Created file {:?}", dest_path),
+                source: source.clone(),
+                event_type: EventType::CompletedCopying,
             })
             .unwrap();
     }
