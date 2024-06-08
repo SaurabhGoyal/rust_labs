@@ -21,7 +21,25 @@ pub struct TreeNode {
     /// The size of the file in bytes, if it's a file. `None` if it's a directory or if the size is not available.
     pub size_in_bytes: Option<u64>,
     /// The children of the node, representing subdirectories and files.
-    pub children: Vec<TreeNode>,
+    pub children: Vec<Arc<TreeNode>>,
+}
+
+#[derive(Debug)]
+pub enum BuildMethod {
+    SerialAsync,
+    ParallelRayon,
+    ParallelThreadPool,
+}
+
+impl BuildMethod {
+    pub fn from_str(method: &str) -> BuildMethod {
+        match method {
+            "serial-async" => Self::SerialAsync,
+            "par-rayon" => Self::ParallelRayon,
+            "par-tp" => Self::ParallelThreadPool,
+            _ => panic!("invalid method"),
+        }
+    }
 }
 
 /// Represents config for building the tree.
@@ -33,6 +51,8 @@ pub struct Config {
     pub depth_check: Option<u32>,
     /// Optional exclude pattern to exclude certain paths from snapshot.
     pub exclude_pattern: Option<String>,
+    /// Method of building.
+    pub build_method: BuildMethod,
 }
 
 /// Builds a tree structure representing the directory structure starting from the specified path.
@@ -45,33 +65,32 @@ pub struct Config {
 ///
 /// A Result containing a TreeNode representing the root of the tree structure, or an io::Error if the operation fails.
 pub fn build(config: Config) -> Result<TreeNode, io::Error> {
-    let dir = Path::new(&config.path);
-    let dir = &dir.canonicalize().unwrap();
-    let ep: String;
-    // let exclude_pattern = match config.exclude_pattern {
-    //     Some(x) => {
-    //         ep = x;
-    //         Some(&ep[..])
-    //     }
-    //     None => None,
-    // };
-    // block_on(_build(
-    //     Path::new(dir),
-    //     config.depth_check,
-    //     exclude_pattern,
-    //     0,
-    // ))
-    // _build_par(Path::new(dir), config.depth_check, exclude_pattern, 0)
-    _build_par_with_threadpool(config.path, config.depth_check, config.exclude_pattern)
+    match config.build_method {
+        BuildMethod::SerialAsync => block_on(_build(
+            Path::new(&config.path),
+            config.depth_check,
+            config.exclude_pattern.as_ref(),
+            0,
+        )),
+        BuildMethod::ParallelRayon => _build_par(
+            Path::new(&config.path),
+            config.depth_check,
+            config.exclude_pattern.as_ref(),
+            0,
+        ),
+        BuildMethod::ParallelThreadPool => {
+            _build_par_with_threadpool(config.path, config.depth_check, config.exclude_pattern)
+        }
+    }
 }
 
 async fn _build(
     dir: &Path,
     depth_check: Option<u32>,
-    exclude_pattern: Option<&str>,
+    exclude_pattern: Option<&String>,
     depth: u32,
 ) -> Result<TreeNode, io::Error> {
-    let mut children: Vec<TreeNode> = vec![];
+    let mut children: Vec<Arc<TreeNode>> = vec![];
     let mut total_size: Option<u64> = None;
     if dir.is_file() {
         total_size = Some(dir.metadata()?.len());
@@ -95,7 +114,7 @@ async fn _build(
                 (Some(curr_size), Some(child_size)) => Some(curr_size + child_size),
                 _ => None,
             };
-            children.push(entry_node);
+            children.push(Arc::new(entry_node));
         }
     }
     return Ok(TreeNode {
@@ -109,7 +128,7 @@ async fn _build(
 fn _build_par(
     dir: &Path,
     depth_check: Option<u32>,
-    exclude_pattern: Option<&str>,
+    exclude_pattern: Option<&String>,
     depth: u32,
 ) -> Result<TreeNode, io::Error> {
     let mut node = TreeNode {
@@ -144,7 +163,7 @@ fn _build_par(
                         (Some(curr_size), Some(child_size)) => Some(curr_size + child_size),
                         _ => None,
                     };
-                    parent.children.push(entry_node);
+                    parent.children.push(Arc::new(entry_node));
                 }
             });
         node = Arc::try_unwrap(node_arc)
