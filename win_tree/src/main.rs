@@ -18,6 +18,7 @@
 //! ```win_tree . -e "^(?:\..*|doc|debug)" > snapshot.json```
 
 mod cli;
+mod threadpool;
 mod tree;
 use std::{env, time::Instant};
 

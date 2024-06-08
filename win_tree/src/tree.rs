@@ -4,15 +4,12 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io;
-use std::ops::Deref;
-use std::ops::DerefMut;
 use std::path::Path;
-use std::sync::mpsc::channel;
-use std::sync::mpsc::Sender;
 use std::sync::Arc;
 use std::sync::Mutex;
-use std::thread;
-use std::thread::JoinHandle;
+
+use crate::threadpool::ThreadPool;
+use crate::threadpool::ThreadPoolJobSender;
 
 /// Represents a node in a tree structure, used to represent directories and files.
 #[derive(Serialize, Deserialize, Debug)]
@@ -51,20 +48,21 @@ pub fn build(config: Config) -> Result<TreeNode, io::Error> {
     let dir = Path::new(&config.path);
     let dir = &dir.canonicalize().unwrap();
     let ep: String;
-    let exclude_pattern = match config.exclude_pattern {
-        Some(x) => {
-            ep = x;
-            Some(&ep[..])
-        }
-        None => None,
-    };
+    // let exclude_pattern = match config.exclude_pattern {
+    //     Some(x) => {
+    //         ep = x;
+    //         Some(&ep[..])
+    //     }
+    //     None => None,
+    // };
     // block_on(_build(
     //     Path::new(dir),
     //     config.depth_check,
     //     exclude_pattern,
     //     0,
     // ))
-    _build_par(Path::new(dir), config.depth_check, exclude_pattern, 0)
+    // _build_par(Path::new(dir), config.depth_check, exclude_pattern, 0)
+    _build_par_with_threadpool(config.path, config.depth_check, config.exclude_pattern)
 }
 
 async fn _build(
@@ -159,46 +157,85 @@ fn _build_par(
     Ok(node)
 }
 
-type Job = Box<dyn FnOnce() + Send + 'static>;
-
-pub struct ThreadPool {
-    sender: Option<Sender<Job>>,
-    handles: Vec<JoinHandle<()>>,
-}
-
-impl ThreadPool {
-    pub fn new(cap: usize) -> Self {
-        assert_ne!(cap, 0);
-        let (sender, receiver) = channel::<Job>();
-        let receiver = Arc::new(Mutex::new(receiver));
-        let mut handles = vec![];
-        for _i in 0..cap {
-            let rc = Arc::clone(&receiver);
-            handles.push(thread::spawn(move || {
-                while let Ok(job) = rc.lock().unwrap().recv() {
-                    job();
-                }
-            }));
-        }
-        ThreadPool {
-            sender: Some(sender),
-            handles,
-        }
-    }
-
-    pub fn add<F>(&self, f: F)
-    where
-        F: FnOnce() + Send + 'static,
-    {
-        self.sender.as_ref().unwrap().send(Box::new(f)).unwrap();
+fn _build_par_with_threadpool(
+    dir: String,
+    depth_check: Option<u32>,
+    exclude_pattern: Option<String>,
+) -> Result<TreeNode, io::Error> {
+    let (pool, sender) = ThreadPool::new::<()>(4);
+    let sender = Arc::new(sender);
+    let depth_check = depth_check.map(Arc::new);
+    let exclude_pattern = exclude_pattern.map(Arc::new);
+    let result = _build_par_with_threadpool_unit(
+        dir,
+        0,
+        None,
+        depth_check,
+        exclude_pattern,
+        Arc::clone(&sender),
+    );
+    drop(sender);
+    drop(pool);
+    if result.is_err() {
+        Err(result.err().unwrap())
+    } else {
+        Ok(Arc::try_unwrap(result.ok().unwrap())
+            .ok()
+            .unwrap()
+            .into_inner()
+            .ok()
+            .unwrap())
     }
 }
 
-impl Drop for ThreadPool {
-    fn drop(&mut self) {
-        self.sender.take();
-        while let Some(handle) = self.handles.pop() {
-            handle.join().unwrap();
-        }
+fn _build_par_with_threadpool_unit(
+    dir: String,
+    depth: u32,
+    parent: Option<Arc<Mutex<TreeNode>>>,
+    depth_check: Option<Arc<u32>>,
+    exclude_pattern: Option<Arc<String>>,
+    sender: Arc<ThreadPoolJobSender<()>>,
+) -> Result<Arc<Mutex<TreeNode>>, io::Error> {
+    let dir = Path::new(&dir).canonicalize().unwrap();
+    let mut node = TreeNode {
+        name: String::from(dir.file_name().unwrap().to_str().unwrap()),
+        is_file: dir.is_file(),
+        size_in_bytes: None,
+        children: vec![],
+    };
+    if dir.is_file() {
+        node.size_in_bytes = Some(dir.metadata()?.len());
     }
+    let node_arc = Arc::new(Mutex::new(node));
+    if dir.is_dir() && (depth_check.is_none() || depth < *depth_check.clone().unwrap()) {
+        fs::read_dir(dir)?
+            .filter(|e| e.is_ok())
+            .map(|e| e.unwrap().path())
+            .filter(|e| {
+                exclude_pattern.is_none()
+                    || !Regex::new(exclude_pattern.as_ref().unwrap().as_str())
+                        .unwrap()
+                        .is_match(e.file_name().unwrap().to_str().unwrap())
+            })
+            .for_each(|e| {
+                let child_dir = e.as_path().to_str().unwrap().to_string();
+                let child_depth = depth + 1;
+                let child_parent_node = Some(node_arc.clone());
+                let child_depth_check = depth_check.clone();
+                let child_exclude_pattern = exclude_pattern.clone();
+                let child_sender = sender.clone();
+                sender.add(Box::new(move || {
+                    _build_par_with_threadpool_unit(
+                        child_dir,
+                        child_depth,
+                        child_parent_node,
+                        child_depth_check,
+                        child_exclude_pattern,
+                        child_sender,
+                    )
+                    .unwrap();
+                }))
+            });
+    }
+    Ok(node_arc)
 }
