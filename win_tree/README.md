@@ -8,6 +8,10 @@ This command is useful for scenarios where making a complete backup of complete 
 - [Mandatory] Path - Must always be the first argument.
 - [Optional] Depth - [-d <number>] Controls how deep to go to generate the tree. Note that if there are children of a directory which are not included in the tree due to depth control then `size_in_bytes` for those directories and cascadingly for all their parent directories would be null as reporting them  without evaluating children would be incorrect.
 - [Optional] Exclude - [-e <regex_pattern>] Controls which paths to exclude from snapshot.
+- [Optional] Build Method - [-m <method_name>] Controls which method will be used to build the tree. Following options are there -
+  - serial-async - No parallelisation, recursive implementation.
+  - par-rayon - Parallellisation with rayon's `par_bridge` on `read_dir` iterator, recursive implementation.
+  - par-tp - Parallellisation with a custom written threadpool, pure function implementation.  
 
 # How to use
 ```
@@ -20,7 +24,7 @@ This command is useful for scenarios where making a complete backup of complete 
 ## Single threaded build and build-async
 Result on running on my external HDD with cap 8 TB and having data of ~4.2 TB across ~15600 files - Built snapshot in 74.27 seconds.
 ```
-saurabh@Saurabh-Raider:/mnt/d/Saurabh/Personal/rust_labs$ cargo run -p win_tree -- /mnt/f/stuff/ -e "^(?:\..*|doc|debug)" > snapshot.json
+saurabh@Saurabh-Raider:/mnt/d/Saurabh/Personal/rust_labs$ cargo run -p win_tree -- /mnt/f/stuff/ -e "^(?:\..*|doc|debug)" -m serial-async > snapshot.json
 warning: virtual workspace defaulting to `resolver = "1"` despite one or more workspace members being on edition 2021 which implies `resolver = "2"`
 note: to keep the current resolver, specify `workspace.resolver = "1"` in the workspace root's manifest
 note: to use the edition 2021 resolver, specify `workspace.resolver = "2"` in the workspace root's manifest
@@ -34,7 +38,7 @@ Serialised in **134.912809ms**
 ## Multi threaded build-par using rayon
 Result on running on my external HDD with cap 8 TB and having data of ~4.2 TB across ~15600 files - Built snapshot in 17.88 seconds.
 ```
-saurabh@Saurabh-Raider:/mnt/d/Saurabh/Personal/rust_labs$ cargo run -p win_tree -- /mnt/f/stuff/ -e "^(?:\..*|doc|debug)" > snapshot.json
+saurabh@Saurabh-Raider:/mnt/d/Saurabh/Personal/rust_labs$ cargo run -p win_tree -- /mnt/f/stuff/ -e "^(?:\..*|doc|debug)" -m par-rayon > snapshot.json
 warning: virtual workspace defaulting to `resolver = "1"` despite one or more workspace members being on edition 2021 which implies `resolver = "2"`
 note: to keep the current resolver, specify `workspace.resolver = "1"` in the workspace root's manifest
 note: to use the edition 2021 resolver, specify `workspace.resolver = "2"` in the workspace root's manifest
@@ -43,4 +47,25 @@ note: for more details see https://doc.rust-lang.org/cargo/reference/resolver.ht
      Running `target/debug/win_tree /mnt/f/stuff/ -e '^(?:\..*|doc|debug)'`
 Built in 17.884196059s
 Serialised in 149.379899ms
+```
+
+## Multi threaded build-par using custom written threadpool
+This was quite complex to achieve and does not produce better results. The reason for completing this was purely learning how it can be done. There are following steps of thinking about this logic -
+- **Pure functions -**
+  - Jobs running in threadpool must be pure functions.
+  - This required modifying the unit function working on single path.
+  - Shared memory was used for config options as well as parent pointers.
+  - Config was read only so copyable data was used and parent was writable (for linking children and updating size) so was put behind a Arc<Mutex<_>>.
+- **Job enqueueing -**
+  - Adding jobs to a threadpool for a recursive operation where one job can produce more jobs was not intuitive to me. Thanks to the answer in [this stackoverflow](https://stackoverflow.com/a/78590982/2555504) question, I realised that we should put the logic of enqueuing new jobs within the job itself.
+- **Memory management, Reference Counting and Producing result -**
+  - In a nutshell, we are creating these TreeNodes which have references to both their parents and children and can be updated at any time and all of this is being done by n number of threads in a pool concurrently.
+  - All of this is simple if we we just keep all shared references behind Arc<Mutex<_>> and update them as and when needed. The tricky part is to take the actual nodes out of the <Mutex> lock and <Arc> wrapper when all the jobs are done, for the purpose of sharing the result to the caller.
+  - One option was to wait for all jobs to complete and then traverse the whole tree of wrapped objects and and create a clone with the inner objects. This approach has two problems - extra memory usage for cloning and extra time taken by serial execution of traversal.
+  - Instead I used an approach which relied on Arc design fundamentals, which is reference count. For each node processing, I used `Arc::try_unwrap()` function to decide if the node has no more children which will be the case if all the children has completed their processing and dropped their reference to the parent. With this, I took the node out of Arc and Mutex wrappers and sent into a result channel.
+  - A good read - https://doc.rust-lang.org/book/ch15-06-reference-cycles.html.
+
+Result on running on my external HDD with cap 8 TB and having data of ~4.2 TB across ~15600 files - Built snapshot in <?> seconds.
+```
+<Pending>
 ```
