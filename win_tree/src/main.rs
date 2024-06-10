@@ -18,14 +18,13 @@
 //! ```win_tree . -e "^(?:\..*|doc|debug)" > snapshot.json```
 
 mod cli;
-mod threadpool;
-mod tree;
 use std::{env, time::Instant};
+use win_tree::build;
 
 fn main() {
-    let config = tree::Config::build_from_args(env::args());
+    let config = cli::build_from_args(env::args());
     let start = Instant::now();
-    let root = tree::build(config).unwrap();
+    let root = build(config).unwrap();
     eprintln!("Built in {:?}", start.elapsed());
     let start = Instant::now();
     let root = serde_json::to_string_pretty(&root).unwrap();
