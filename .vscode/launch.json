@@ -207,11 +207,13 @@
                 }
             },
             "args": [
-                "target",
+                "local/test",
                 "-e",
                 "^(?:\\..*|doc|debug)",
                 "-d",
-                "1"
+                "2",
+                "-m",
+                "par-tp"
             ],
             "cwd": "${workspaceFolder}"
         },
