@@ -1,3 +1,5 @@
+use std::str::FromStr as _;
+
 use regex::Regex;
 use win_tree::{BuildMethod, Config};
 
@@ -32,9 +34,12 @@ pub fn build_from_args(mut args: impl Iterator<Item = String>) -> Config {
                     let _ = Regex::new(&pattern).unwrap();
                     config.exclude_pattern = Some(pattern);
                 }
-                ARG_METHOD_KEY => {
-                    config.build_method = BuildMethod::from_str(args.next().unwrap().as_str());
-                }
+                ARG_METHOD_KEY => match BuildMethod::from_str(args.next().unwrap().as_str()) {
+                    Ok(build_method) => {
+                        config.build_method = build_method;
+                    }
+                    Err(e) => panic!("{e}"),
+                },
                 _ => {
                     panic!("invalid arg")
                 }

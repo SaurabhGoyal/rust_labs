@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io;
 use std::path::Path;
+use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::thread;
@@ -27,23 +28,33 @@ pub struct TreeNode {
     #[serde(skip_serializing)]
     parent: Option<Arc<Mutex<TreeNode>>>,
 }
-
+/// Represents the method of building the tree. Usually serial-async and parallel-rayon are the most performant.
+/// Other methods are added just for benchmarking purposes.
 #[derive(Debug)]
 pub enum BuildMethod {
+    /// Every file path in tree is read sequentially with async await on read call.
+    /// This is single threaded with a `block_on` future executor.
     SerialAsync,
+    /// Every child path for one directory is read parallelly using rayon's `par_bridge` on iterator.
+    /// This is currently giving the best time performance.
     ParallelRayon,
+    /// Every path is queued in a job queue. A pool of n concurrent threads process each job concurrently.
+    /// This is currently giving the worst time performance considering that file info read is not a CPU bound
+    ///  process and hence would be causing a lot of context switchingamong threads.
     ParallelThreadPool,
 }
 
-impl BuildMethod {
-    pub fn from_str(method: &str) -> BuildMethod {
+impl FromStr for BuildMethod {
+    fn from_str(method: &str) -> Result<Self, Self::Err> {
         match method {
-            "serial-async" => Self::SerialAsync,
-            "par-rayon" => Self::ParallelRayon,
-            "par-tp" => Self::ParallelThreadPool,
-            _ => panic!("invalid method"),
+            "serial-async" => Ok(Self::SerialAsync),
+            "par-rayon" => Ok(Self::ParallelRayon),
+            "par-tp" => Ok(Self::ParallelThreadPool),
+            _ => Err(String::from("invalid method")),
         }
     }
+
+    type Err = String;
 }
 
 /// Represents config for building the tree.
