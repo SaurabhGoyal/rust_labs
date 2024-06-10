@@ -7,6 +7,7 @@ use std::io;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::thread;
 
 use crate::threadpool::ThreadPool;
 use crate::threadpool::ThreadPoolJobSender;
@@ -22,6 +23,9 @@ pub struct TreeNode {
     pub size_in_bytes: Option<u64>,
     /// The children of the node, representing subdirectories and files.
     pub children: Vec<Arc<TreeNode>>,
+    /// Parent of the node.
+    #[serde(skip_serializing)]
+    parent: Option<Arc<Mutex<TreeNode>>>,
 }
 
 #[derive(Debug)]
@@ -122,6 +126,7 @@ async fn _build(
         is_file: dir.is_file(),
         size_in_bytes: total_size,
         children,
+        parent: None,
     });
 }
 
@@ -136,6 +141,7 @@ fn _build_par(
         is_file: dir.is_file(),
         size_in_bytes: None,
         children: vec![],
+        parent: None,
     };
     if dir.is_file() {
         node.size_in_bytes = Some(dir.metadata()?.len());
@@ -176,34 +182,45 @@ fn _build_par(
     Ok(node)
 }
 
+type NodeProcessingResult = Result<Option<TreeNode>, io::Error>;
+
 fn _build_par_with_threadpool(
     dir: String,
     depth_check: Option<u32>,
     exclude_pattern: Option<String>,
 ) -> Result<TreeNode, io::Error> {
-    let (pool, sender) = ThreadPool::new::<()>(4);
+    let (pool, sender, receiver) = ThreadPool::new::<NodeProcessingResult>(4);
     let sender = Arc::new(sender);
     let depth_check = depth_check.map(Arc::new);
     let exclude_pattern = exclude_pattern.map(Arc::new);
-    let result = _build_par_with_threadpool_unit(
+    let result_listener = thread::spawn(move || {
+        let mut root = None;
+        while let Ok(node) = receiver.recv() {
+            if let Ok(Some(node)) = node {
+                if node.parent.is_none() {
+                    root = Some(node);
+                }
+            }
+        }
+        root
+    });
+
+    let res = _build_par_with_threadpool_unit(
         dir,
         0,
         None,
         depth_check,
         exclude_pattern,
         Arc::clone(&sender),
-    );
+    )?;
     drop(sender);
     drop(pool);
-    if result.is_err() {
-        Err(result.err().unwrap())
-    } else {
-        Ok(Arc::try_unwrap(result.ok().unwrap())
-            .ok()
-            .unwrap()
-            .into_inner()
-            .ok()
-            .unwrap())
+    match result_listener.join().unwrap() {
+        Some(root) => Ok(root),
+        None => match res {
+            Some(root) => Ok(root),
+            None => panic!("no root found"),
+        },
     }
 }
 
@@ -213,19 +230,21 @@ fn _build_par_with_threadpool_unit(
     parent: Option<Arc<Mutex<TreeNode>>>,
     depth_check: Option<Arc<u32>>,
     exclude_pattern: Option<Arc<String>>,
-    sender: Arc<ThreadPoolJobSender<()>>,
-) -> Result<Arc<Mutex<TreeNode>>, io::Error> {
+    sender: Arc<ThreadPoolJobSender<NodeProcessingResult>>,
+) -> NodeProcessingResult {
     let dir = Path::new(&dir).canonicalize().unwrap();
-    let mut node = TreeNode {
+    let node = TreeNode {
         name: String::from(dir.file_name().unwrap().to_str().unwrap()),
         is_file: dir.is_file(),
-        size_in_bytes: None,
+        size_in_bytes: if dir.is_file() {
+            Some(dir.metadata()?.len())
+        } else {
+            Some(0)
+        },
         children: vec![],
+        parent,
     };
-    if dir.is_file() {
-        node.size_in_bytes = Some(dir.metadata()?.len());
-    }
-    let node_arc = Arc::new(Mutex::new(node));
+    let mut node_arc_mut_guard = Arc::new(Mutex::new(node));
     if dir.is_dir() && (depth_check.is_none() || depth < *depth_check.clone().unwrap()) {
         fs::read_dir(dir)?
             .filter(|e| e.is_ok())
@@ -239,7 +258,7 @@ fn _build_par_with_threadpool_unit(
             .for_each(|e| {
                 let child_dir = e.as_path().to_str().unwrap().to_string();
                 let child_depth = depth + 1;
-                let child_parent_node = Some(node_arc.clone());
+                let child_parent_node = Some(node_arc_mut_guard.clone());
                 let child_depth_check = depth_check.clone();
                 let child_exclude_pattern = exclude_pattern.clone();
                 let child_sender = sender.clone();
@@ -252,9 +271,30 @@ fn _build_par_with_threadpool_unit(
                         child_exclude_pattern,
                         child_sender,
                     )
-                    .unwrap();
                 }))
             });
     }
-    Ok(node_arc)
+    let mut root: Option<TreeNode> = None;
+    while let Ok(temp_node_mut_guard) = Arc::try_unwrap(node_arc_mut_guard) {
+        let mut temp_node = temp_node_mut_guard.into_inner().unwrap();
+        let temp_parent_arc = temp_node.parent.clone();
+        temp_node.parent = None;
+        if let Some(temp_parent_arc) = temp_parent_arc {
+            let temp_node_arc = Arc::new(temp_node);
+            {
+                let mut temp_parent_arc = temp_parent_arc.lock().unwrap();
+                temp_parent_arc.children.push(temp_node_arc.clone());
+                temp_parent_arc.size_in_bytes =
+                    match (temp_parent_arc.size_in_bytes, temp_node_arc.size_in_bytes) {
+                        (Some(curr_size), Some(child_size)) => Some(curr_size + child_size),
+                        _ => None,
+                    };
+            }
+            node_arc_mut_guard = temp_parent_arc.clone();
+        } else {
+            root = Some(temp_node);
+            break;
+        }
+    }
+    Ok(root)
 }

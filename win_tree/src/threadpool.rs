@@ -1,6 +1,6 @@
 use std::{
     sync::{
-        mpsc::{channel, Sender},
+        mpsc::{channel, Receiver, Sender},
         Arc, Mutex,
     },
     thread::{self, JoinHandle},
@@ -23,20 +23,27 @@ impl<T> ThreadPoolJobSender<T> {
 }
 
 impl ThreadPool {
-    pub fn new<T: 'static>(cap: usize) -> (Self, ThreadPoolJobSender<T>) {
+    pub fn new<T: Send + 'static>(cap: usize) -> (Self, ThreadPoolJobSender<T>, Receiver<T>) {
         assert_ne!(cap, 0);
         let (job_sender, job_receiver) = channel::<Job<T>>();
-        let receiver = Arc::new(Mutex::new(job_receiver));
+        let (result_sender, result_receiver) = channel::<T>();
+        let job_receiver = Arc::new(Mutex::new(job_receiver));
+        let result_sender = Arc::new(Mutex::new(result_sender));
         let mut handles = vec![];
         for _i in 0..cap {
-            let rc = Arc::clone(&receiver);
+            let job_receiver = Arc::clone(&job_receiver);
+            let result_sender = Arc::clone(&result_sender);
             handles.push(thread::spawn(move || {
-                while let Ok(job) = rc.lock().unwrap().recv() {
-                    job();
+                while let Ok(job) = job_receiver.lock().unwrap().recv() {
+                    result_sender.lock().unwrap().send(job()).unwrap();
                 }
             }));
         }
-        (ThreadPool { handles }, ThreadPoolJobSender { job_sender })
+        (
+            ThreadPool { handles },
+            ThreadPoolJobSender { job_sender },
+            result_receiver,
+        )
     }
 }
 
