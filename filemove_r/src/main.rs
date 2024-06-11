@@ -2,15 +2,17 @@ use futures::executor::block_on;
 use std::{
     env, fmt, fs,
     io::{self, Read, Write},
-    path::{Display, Path},
+    path::Path,
     sync::{
         atomic::AtomicU64,
         mpsc::{channel, Receiver, Sender},
         Arc,
     },
     thread::{self, JoinHandle},
-    time::{Duration, Instant},
+    time::Instant,
 };
+use threadpool::ThreadPool;
+use threadpool::ThreadPoolJobSender;
 
 fn clear_screen() {
     print!("{}[2J", 27 as char); // ANSI escape code to clear the screen
@@ -202,6 +204,8 @@ impl Mover {
             }
         }));
         self.copier_handle = Some(thread::spawn(move || {
+            let (pool, job_q, _res_q) = ThreadPool::new::<()>(8);
+            let job_q = Arc::new(job_q);
             if do_async {
                 block_on(Self::transfer_async(
                     source,
@@ -210,8 +214,16 @@ impl Mover {
                     internal_event_tx,
                 ));
             } else {
-                Self::transfer(source, dest_dir, tree_root.clone(), internal_event_tx);
+                Self::transfer(
+                    source,
+                    dest_dir,
+                    tree_root.clone(),
+                    internal_event_tx,
+                    job_q.clone(),
+                );
             }
+            drop(job_q);
+            drop(pool);
         }));
     }
 
@@ -294,6 +306,7 @@ impl Mover {
         dest_dir: String,
         tree_node: Arc<win_tree::TreeNode>,
         event_sender: Arc<Sender<Event>>,
+        job_q: Arc<ThreadPoolJobSender<()>>,
     ) {
         if !tree_node.is_file {
             let dest_path = format!("{}/{}", dest_dir, tree_node.name);
@@ -301,12 +314,20 @@ impl Mover {
                 "Destination either already exists or does not have the given parent path.",
             );
             for child in tree_node.children.iter() {
-                Self::transfer(
-                    format!("{}/{}", source, child.name),
-                    dest_path.to_string(),
-                    child.clone(),
-                    event_sender.clone(),
-                );
+                let child_source = format!("{}/{}", source, child.name);
+                let child_dest_dir = dest_path.to_string();
+                let child_node = child.clone();
+                let child_event_sender = event_sender.clone();
+                let child_job_q = job_q.clone();
+                job_q.add(Box::new(move || {
+                    Self::transfer(
+                        child_source,
+                        child_dest_dir,
+                        child_node,
+                        child_event_sender,
+                        child_job_q,
+                    )
+                }));
             }
             return;
         }

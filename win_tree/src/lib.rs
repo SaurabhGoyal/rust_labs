@@ -17,7 +17,6 @@
 //! This command generates snapshots for non-hidden (not starting with a dot) files and directories which are not in `doc` or `debug` directories and dumps it in snapshot.json.
 //! ```win_tree . -e "^(?:\..*|doc|debug)" > snapshot.json```
 
-mod threadpool;
 mod tree;
 
 pub use tree::*;

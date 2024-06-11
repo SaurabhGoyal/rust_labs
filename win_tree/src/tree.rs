@@ -10,8 +10,8 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::thread;
 
-use crate::threadpool::ThreadPool;
-use crate::threadpool::ThreadPoolJobSender;
+use threadpool::ThreadPool;
+use threadpool::ThreadPoolJobSender;
 
 /// Represents a node in a tree structure, used to represent directories and files.
 #[derive(Serialize, Deserialize, Debug)]
