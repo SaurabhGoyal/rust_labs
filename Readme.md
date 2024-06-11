@@ -15,7 +15,6 @@
 - **Target concepts** -
   - process - process execution
 - **Further changes** -
-  - async - IO bound application (reads hierarchy of directory including all files)
   - clap - better parameter handling
 
 ## sudoku_solver [Improvements pending]
@@ -50,7 +49,6 @@
   - io - Used to perform copying of one path to given location
   - thread - Threads to listen to events from transfer process and update status
   - async -
-  - crossterm/console - Progress rendering. 
 - **Further changes** -
 
 ## torrent_r [Not Started Yet]
@@ -87,4 +85,4 @@
   - https://lib.rs/ - index of crates.io
   - [Awesome-rust](https://github.com/rust-unofficial/awesome-rust)
   - [Idiomatic rust index](https://github.com/mre/idiomatic-rust)
-  - Github ([search](https://github.com/search?q=language%3ARust++stars%3A%3C500+&type=repositories) and [trending](https://github.com/trending/rust?since=daily))
+  - Github ([search(<100 stars, updated since May, 2024)](https://github.com/search?q=stars%3A%3C100+pushed%3A%3E2024-05-01+language%3ARust&type=Repositories&ref=advsearch&l=Rust&l=) and [trending](https://github.com/trending/rust?since=daily))

@@ -62,9 +62,9 @@ impl fmt::Display for Event {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut out = String::new();
         if self.event_type == EventType::PathCompleted {
-            out.push_str(format!("File `{}` copied successfully.", self.path).as_str());
+            out.push_str(format!("Completed `{}`.", self.path).as_str());
         } else {
-            out.push_str(format!("File `{}` is being copied.", self.path).as_str());
+            out.push_str(format!("Copying `{}`.", self.path).as_str());
         }
         f.write_str(out.as_str())
     }
