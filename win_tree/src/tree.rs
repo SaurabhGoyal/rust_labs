@@ -157,8 +157,8 @@ fn _build_par(
     if dir.is_file() {
         node.size_in_bytes = Some(dir.metadata()?.len());
     } else if dir.is_dir() && (depth_check.is_none() || depth < depth_check.unwrap()) {
+        node.size_in_bytes = Some(0);
         let node_arc = Arc::new(Mutex::new(node));
-
         fs::read_dir(dir)?
             .par_bridge()
             .filter(|e| e.is_ok())

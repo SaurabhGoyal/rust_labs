@@ -60,12 +60,21 @@ This was quite complex to achieve and does not produce better results. The reaso
   - Adding jobs to a threadpool for a recursive operation where one job can produce more jobs was not intuitive to me. Thanks to the answer in [this stackoverflow](https://stackoverflow.com/a/78590982/2555504) question, I realised that we should put the logic of enqueuing new jobs within the job itself.
 - **Memory management, Reference Counting and Producing result -**
   - In a nutshell, we are creating these TreeNodes which have references to both their parents and children and can be updated at any time and all of this is being done by n number of threads in a pool concurrently.
-  - All of this is simple if we we just keep all shared references behind Arc<Mutex<_>> and update them as and when needed. The tricky part is to take the actual nodes out of the <Mutex> lock and <Arc> wrapper when all the jobs are done, for the purpose of sharing the result to the caller.
-  - One option was to wait for all jobs to complete and then traverse the whole tree of wrapped objects and and create a clone with the inner objects. This approach has two problems - extra memory usage for cloning and extra time taken by serial execution of traversal.
-  - Instead I used an approach which relied on Arc design fundamentals, which is reference count. For each node processing, I used `Arc::try_unwrap()` function to decide if the node has no more children which will be the case if all the children has completed their processing and dropped their reference to the parent. With this, I took the node out of Arc and Mutex wrappers and sent into a result channel.
+  - All of this is simple if we we just keep all shared references behind Arc<Mutex<_>> and update them as and when needed. The tricky part is to take the nodes which are ready out of the <Mutex> lock and <Arc> wrapper when all the jobs are done, for the purpose of sharing the result to the caller.
+  - One option is to wait for all jobs to complete and then traverse the whole tree of wrapped objects and and create a clone with the inner objects. This approach has two problems - extra memory usage for cloning and extra time taken by serial execution of traversal.
+  - Instead I used an approach which relied on Arc design fundamentals, which is reference count. For each node processing, I used `Arc::try_unwrap()` function to decide if the node has no more children which will be the case if all the children has completed their processing and dropped their reference to the parent. Using this, I was able to take the node out of Arc and Mutex wrappers and sent into a result channel which caller can consume.
   - A good read - https://doc.rust-lang.org/book/ch15-06-reference-cycles.html.
 
-Result on running on my external HDD with cap 8 TB and having data of ~4.2 TB across ~15600 files - Built snapshot in <?> seconds.
+Result on running on my external HDD with cap 8 TB and having data of ~4.2 TB across ~15600 files - Built snapshot in 298.82 seconds.
 ```
-<Pending>
+saurabh@Saurabh-Raider:/mnt/d/Saurabh/Personal/rust_labs$ cargo run -p win_tree -- /mnt/f/stuff/ -e "^(?:\..*|doc|debug)" -m par-tp > target/snapshot.json
+warning: virtual workspace defaulting to `resolver = "1"` despite one or more workspace members being on edition 2021 which implies `resolver = "2"`
+note: to keep the current resolver, specify `workspace.resolver = "1"` in the workspace root's manifest
+note: to use the edition 2021 resolver, specify `workspace.resolver = "2"` in the workspace root's manifest
+note: for more details see https://doc.rust-lang.org/cargo/reference/resolver.html#resolver-versions
+   Compiling win_tree v0.1.3 (/mnt/d/Saurabh/Personal/rust_labs/win_tree)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 16.82s
+     Running `target/debug/win_tree /mnt/f/stuff/ -e '^(?:\..*|doc|debug)' -m par-tp`
+Built in 298.828725846s
+Serialised in 155.544688ms
 ```

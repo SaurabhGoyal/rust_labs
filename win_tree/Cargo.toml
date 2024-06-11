@@ -1,6 +1,6 @@
 [package]
 name = "win_tree"
-version = "0.1.3"
+version = "0.1.4"
 edition = "2021"
 
 authors = ["Saurabh Goyal <saurabh.2561@gmail.com>"]
