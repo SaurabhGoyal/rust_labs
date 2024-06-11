@@ -14,6 +14,7 @@ This command is useful for scenarios where making a complete backup of complete 
   - par-tp - Parallellisation with a custom written threadpool, pure function implementation.  
 
 # How to use
+Via crates - [win_tree](https://crates.io/crates/win_tree).
 ```
 # [Install cargo](https://doc.rust-lang.org/cargo/getting-started/installation.html)
 - `cargo install win_tree`
