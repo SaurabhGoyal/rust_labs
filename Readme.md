@@ -6,8 +6,8 @@
   - io - writing files
   - serde - de/serialization
   - regex - pattern matching
-- **Further changes** -
   - async - IO bound application (reads hierarchy of directory including all files)
+- **Further changes** -
   - clap - better parameter handling
 
 ## tiny_shell [Improvements pending]
@@ -43,14 +43,14 @@
   - async and tokio - better state management and concurrency
   - Playability - Larger bricks, faster response time to user control.
 
-## move_r [Not Started Yet]
+## move_r [In Progress]
 - **Description** - Data transfer tool for large amounts of data
 - **Target concepts** -
-  - thread -
-  - sync -
+  - win_tree - Used to walk and build tree for given path
+  - io - Used to perform copying of one path to given location
+  - thread - Threads to listen to events from transfer process and update status
   - async -
-  - fs -
-  - io -
+  - crossterm/console - Progress rendering. 
 - **Further changes** -
 
 ## torrent_r [Not Started Yet]
@@ -76,6 +76,7 @@
 
 # Reference projects
 - Small-Medium projects (<1k stars, <1k commits) - easy to go through and learn from.
+  - [console](https://github.com/console-rs/console) - Terminal manipulator for building CLIs.
   - [sysinfo](https://github.com/GuillaumeGomez/sysinfo) - Cross platform system information (process, memory, disk, network, devices) library.
   - [sig](https://github.com/ynqa/sig/tree/main) - Interactive grep on a stream
   - [ncspot](https://github.com/hrkfdn/ncspot) - Spotify terminal client

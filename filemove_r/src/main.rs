@@ -1,15 +1,22 @@
 use futures::executor::block_on;
 use std::{
-    env, fs,
-    io::{Read, Write},
-    path::Path,
+    env, fmt, fs,
+    io::{self, Read, Write},
+    path::{Display, Path},
     sync::{
         atomic::AtomicU64,
         mpsc::{channel, Receiver, Sender},
         Arc,
     },
     thread::{self, JoinHandle},
+    time::{Duration, Instant},
 };
+
+fn clear_screen() {
+    print!("{}[2J", 27 as char); // ANSI escape code to clear the screen
+    print!("{}[1;1H", 27 as char); // ANSI escape code to move the cursor to the top-left corner
+    io::stdout().flush().unwrap(); // Flush stdout to ensure screen is cleared immediately
+}
 
 fn main() {
     let args = env::args().collect::<Vec<String>>();
@@ -19,13 +26,24 @@ fn main() {
         args.len() > 3 && args[3] == "-a",
     );
     mover.start();
-    let event_thread = thread::spawn(move || {
+    let render_thread = thread::spawn(move || {
+        let mut last_ts = Instant::now();
         while let Ok((event, state)) = event_receiver.recv() {
-            println!("{:?}\n{:?}\n-------------\n", event, state);
+            let now = Instant::now();
+            if now.duration_since(last_ts).as_millis() >= 200
+                || state
+                    .copied_bytes
+                    .load(std::sync::atomic::Ordering::Relaxed)
+                    == state.total_bytes
+            {
+                clear_screen();
+                println!("{state}-------------\n{event}\n");
+                last_ts = now;
+            }
         }
     });
     drop(mover);
-    event_thread.join().unwrap();
+    render_thread.join().unwrap();
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -36,8 +54,20 @@ enum EventType {
 
 #[derive(Debug)]
 struct Event {
-    source: String,
+    path: String,
     event_type: EventType,
+}
+
+impl fmt::Display for Event {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut out = String::new();
+        if self.event_type == EventType::PathCompleted {
+            out.push_str(format!("File `{}` copied successfully.", self.path).as_str());
+        } else {
+            out.push_str(format!("File `{}` is being copied.", self.path).as_str());
+        }
+        f.write_str(out.as_str())
+    }
 }
 
 #[derive(Debug)]
@@ -48,6 +78,32 @@ struct State {
     total_bytes: u64,
     copied_file_count: AtomicU64,
     copied_bytes: AtomicU64,
+}
+
+impl fmt::Display for State {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut out = String::new();
+        let total = self.total_bytes;
+        let copied = self.copied_bytes.load(std::sync::atomic::Ordering::Relaxed);
+        let progress = (copied as f64 / total as f64) * 100.0;
+        let progress_char_size = progress as usize;
+        out.push_str(
+            format!(
+                "[{}>{}]\n",
+                vec!["="; progress_char_size].join(""),
+                vec![" "; 100 - progress_char_size].join(""),
+            )
+            .as_str(),
+        );
+        out.push_str(
+            format!(
+                "- Total files - {}\n- Copied - {}\n- Progress - {:.2}%\n",
+                total, copied, progress
+            )
+            .as_str(),
+        );
+        f.write_str(out.as_str())
+    }
 }
 
 struct Mover {
@@ -77,7 +133,6 @@ impl Mover {
             })
             .expect("unable to build tree"),
         );
-        println!("Tree - {:?}", tree_root);
         let (event_sender, event_receiver) = channel::<(Event, Arc<State>)>();
         let event_sender = Arc::new(event_sender);
         fn get_counts(node: Arc<win_tree::TreeNode>) -> (u64, u64, u64) {
@@ -118,11 +173,12 @@ impl Mover {
     }
 
     fn start(&mut self) {
-        let (source, dest_dir, do_async, event_sender, state) = (
+        let (source, dest_dir, do_async, event_sender, tree_root, state) = (
             self.source.clone(),
             self.dest_dir.clone(),
             self.do_async,
             self.event_sender.clone(),
+            self.tree_root.clone(),
             self.state.clone(),
         );
         let (internal_event_tx, internal_event_rx) = channel::<Event>();
@@ -147,9 +203,14 @@ impl Mover {
         }));
         self.copier_handle = Some(thread::spawn(move || {
             if do_async {
-                block_on(Self::transfer_async(source, dest_dir, internal_event_tx));
+                block_on(Self::transfer_async(
+                    source,
+                    dest_dir,
+                    tree_root.clone(),
+                    internal_event_tx,
+                ));
             } else {
-                Self::transfer(source, dest_dir, internal_event_tx);
+                Self::transfer(source, dest_dir, tree_root.clone(), internal_event_tx);
             }
         }));
     }
@@ -165,13 +226,13 @@ impl Mover {
         (source_path, dest_path)
     }
 
-    fn copy(source_path: &Path, dest_path: &Path, event_sender: Arc<Sender<Event>>) {
+    fn copy(source_path: &String, dest_path: &String, event_sender: Arc<Sender<Event>>) {
         let mut source_file = fs::OpenOptions::new().read(true).open(source_path).unwrap();
         let mut dest_file = fs::OpenOptions::new()
             .create_new(true)
             .write(true)
             .open(dest_path)
-            .unwrap();
+            .expect(format!("issue in dest path {dest_path}").as_str());
         // copy(&mut source_file, &mut dest_file).expect("error in copying");
         let mut buf: [u8; 4096] = [0; 1 << 12];
         loop {
@@ -184,7 +245,7 @@ impl Mover {
                 .expect("error in writing to file");
             event_sender
                 .send(Event {
-                    source: source_path.to_str().unwrap().to_string(),
+                    path: String::from(source_path),
                     event_type: EventType::DataCopied(bytes_read as u64),
                 })
                 .unwrap();
@@ -193,49 +254,67 @@ impl Mover {
         }
         event_sender
             .send(Event {
-                source: source_path.to_str().unwrap().to_string(),
+                path: String::from(source_path),
                 event_type: EventType::PathCompleted,
             })
             .unwrap();
     }
 
-    async fn transfer_async(source: String, dest_dir: String, event_sender: Arc<Sender<Event>>) {
-        let (source_path, dest_path) = Self::init_path(&source, &dest_dir);
-        if source_path.is_dir() {
-            fs::create_dir(dest_path.clone()).expect(
+    async fn transfer_async(
+        source: String,
+        dest_dir: String,
+        tree_node: Arc<win_tree::TreeNode>,
+        event_sender: Arc<Sender<Event>>,
+    ) {
+        if !tree_node.is_file {
+            let dest_path = format!("{}/{}", dest_dir, tree_node.name);
+            fs::create_dir(&dest_path).expect(
                 "Destination either already exists or does not have the given parent path.",
             );
-            for child in fs::read_dir(source_path).unwrap() {
-                let child = child.unwrap();
+            for child in tree_node.children.iter() {
                 Box::pin(Self::transfer_async(
-                    child.path().as_path().to_str().unwrap().to_string(),
-                    dest_path.to_str().unwrap().to_string(),
+                    format!("{}/{}", source, child.name),
+                    dest_path.to_string(),
+                    child.clone(),
                     event_sender.clone(),
                 ))
                 .await;
             }
             return;
         }
-        Self::copy(&source_path, &dest_path, event_sender);
+        Self::copy(
+            &source,
+            &format!("{}/{}", dest_dir, tree_node.name),
+            event_sender,
+        );
     }
 
-    fn transfer(source: String, dest_dir: String, event_sender: Arc<Sender<Event>>) {
-        let (source_path, dest_path) = Self::init_path(&source, &dest_dir);
-        if source_path.is_dir() {
-            fs::create_dir(dest_path.clone()).expect(
+    fn transfer(
+        source: String,
+        dest_dir: String,
+        tree_node: Arc<win_tree::TreeNode>,
+        event_sender: Arc<Sender<Event>>,
+    ) {
+        if !tree_node.is_file {
+            let dest_path = format!("{}/{}", dest_dir, tree_node.name);
+            fs::create_dir(&dest_path).expect(
                 "Destination either already exists or does not have the given parent path.",
             );
-            for child in fs::read_dir(source_path).unwrap() {
-                let child = child.unwrap();
+            for child in tree_node.children.iter() {
                 Self::transfer(
-                    child.path().as_path().to_str().unwrap().to_string(),
-                    dest_path.to_str().unwrap().to_string(),
+                    format!("{}/{}", source, child.name),
+                    dest_path.to_string(),
+                    child.clone(),
                     event_sender.clone(),
                 );
             }
             return;
         }
-        Self::copy(&source_path, &dest_path, event_sender);
+        Self::copy(
+            &source,
+            &format!("{}/{}", dest_dir, tree_node.name),
+            event_sender,
+        );
     }
 }
 
