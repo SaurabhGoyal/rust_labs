@@ -76,6 +76,7 @@
 
 # Reference projects
 - Small-Medium projects (<1k stars, <1k commits) - easy to go through and learn from.
+  - [bendy](https://github.com/P3KI/bendy) - Bencode (bittorrent metainfo file encoding) encoder/decoder.
   - [console](https://github.com/console-rs/console) - Terminal manipulator for building CLIs.
   - [flamegraph](https://github.com/flamegraph-rs/flamegraph) - Flamegraph profiler for binaries.
   - [sysinfo](https://github.com/GuillaumeGomez/sysinfo) - Cross platform system information (process, memory, disk, network, devices) library.
@@ -84,6 +85,7 @@
 - Fairly large projects
   - [hyperswitch](https://github.com/juspay/hyperswitch) - Open Payment Gateway (By Juspay)
   - [rustdesk](https://github.com/rustdesk/rustdesk) - Remote Desktop (Same as Teamviewer)
+  - [rqbit](https://github.com/ikatson/rqbit) - Torrent client.
 - Also check
   - https://lib.rs/ - index of crates.io
   - [Awesome-rust](https://github.com/rust-unofficial/awesome-rust)

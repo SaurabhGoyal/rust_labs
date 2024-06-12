@@ -16,3 +16,26 @@ All arguments supported by [win_tree](https://crates.io/crates/win_tree) lib.
   - serial-async - No parallelisation, recursive implementation.
   - par-rayon - Parallellisation with rayon's `par_bridge` on `read_dir` iterator, recursive implementation.
   - par-tp - Parallellisation with a custom written threadpool, pure function implementation.  
+
+# Performance
+- Much faster than the linux `cp` command - transfer of ~23k files with tree-depth of ~10 and internal SSD as source and internal HDD as destination.
+```
+saurabh@Saurabh-Raider:/mnt/d/Saurabh/Personal/rust_labs$ sudo rm -rf /mnt/e/Saurabh/tmp && mkdir -p /mnt/e/Saurabh/tmp && time cp -r local/ros2-windows /mnt/e/Saurabh/tmp
+real    5m32.801s
+user    0m1.220s
+sys     0m20.353s
+
+saurabh@Saurabh-Raider:/mnt/d/Saurabh/Personal/rust_labs$ sudo rm -rf /mnt/e/Saurabh/tmp && mkdir -p /mnt/e/Saurabh/tmp && time target/release/cprs local/ros2-windows /mnt/e/Saurabh/tmp
+
+[====================================================================================================>]
+- Files - 22829 / 22829
+- Data (KB) - 569757 / 569757 (100.00%)
+-------------
+Completed `local/ros2-windows/share/examples_rclcpp_minimal_service/hook/pythonscriptspath.ps1`.
+
+
+real    1m34.575s
+user    0m4.616s
+sys     1m24.432s
+```
+- Windows file explorer copy command is taking 2m01s for the same.
