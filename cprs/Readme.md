@@ -1,5 +1,5 @@
-# File Move-R(Rust)
-A program to move files from one location to another.
+# cprs (File Copier)
+A program to copy files from one location to another.
 - This would expose multiple methods of moving files including sequential reqcursive, sequential async and parallel.
 - The preprocessing includes walking the given location and building a tree using [win_tree](https://crates.io/crates/win_tree) lib.
 - The actual transfer then includes copying the files an deleting them once done. (Deletion step is currently pending)

@@ -75,6 +75,7 @@
 # Reference projects
 - Small-Medium projects (<1k stars, <1k commits) - easy to go through and learn from.
   - [console](https://github.com/console-rs/console) - Terminal manipulator for building CLIs.
+  - [flamegraph](https://github.com/flamegraph-rs/flamegraph) - Flamegraph profiler for binaries.
   - [sysinfo](https://github.com/GuillaumeGomez/sysinfo) - Cross platform system information (process, memory, disk, network, devices) library.
   - [sig](https://github.com/ynqa/sig/tree/main) - Interactive grep on a stream
   - [ncspot](https://github.com/hrkfdn/ncspot) - Spotify terminal client

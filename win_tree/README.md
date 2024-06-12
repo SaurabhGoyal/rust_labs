@@ -3,7 +3,8 @@ A program to get the tree structure information of given directory in a recursiv
 
 # Performance
 - **[No support for Symlinks]** Program uses `fs::symlink_metadata` which translates to unix's `lstat` command which is ~10-15% faster that `stat` command as the former does not follow symlinks.
-- Reducing `lstat` system call to only once per path.
+- Reducing `lstat` system call to only once per path
+![Profile flamegraph](./flamegraph.svg "Profile flamegraph")
 - Using `rayon` to parallely trigger tasks for each path.
 
 # Usecase

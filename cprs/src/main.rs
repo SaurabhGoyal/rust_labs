@@ -1,4 +1,5 @@
 use futures::executor::block_on;
+use rayon::prelude::*;
 use std::{
     env, fmt, fs,
     io::{self, Read, Write},
@@ -11,8 +12,6 @@ use std::{
     thread::{self, JoinHandle},
     time::Instant,
 };
-use threadpool::ThreadPool;
-use threadpool::ThreadPoolJobSender;
 
 fn clear_screen() {
     print!("{}[2J", 27 as char); // ANSI escape code to clear the screen
@@ -22,12 +21,12 @@ fn clear_screen() {
 
 fn main() {
     let args = env::args().collect::<Vec<String>>();
-    let (mut mover, event_receiver) = Mover::new(
+    let (mut copier, event_receiver) = Copier::new(
         String::from(&args[1]),
         String::from(&args[2]),
         args.len() > 3 && args[3] == "-a",
     );
-    mover.start();
+    copier.start();
     let render_thread = thread::spawn(move || {
         let mut last_ts = Instant::now();
         while let Ok((event, state)) = event_receiver.recv() {
@@ -44,7 +43,7 @@ fn main() {
             }
         }
     });
-    drop(mover);
+    drop(copier);
     render_thread.join().unwrap();
 }
 
@@ -99,8 +98,10 @@ impl fmt::Display for State {
         );
         out.push_str(
             format!(
-                "- Total files - {}\n- Copied - {}\n- Progress - {:.2}%\n",
-                total, copied, progress
+                "- Total (KB) - {}\n- Copied (KB) - {}\n- Progress - {:.2}%\n",
+                total / (1 << 10),
+                copied / (1 << 10),
+                progress
             )
             .as_str(),
         );
@@ -108,7 +109,7 @@ impl fmt::Display for State {
     }
 }
 
-struct Mover {
+struct Copier {
     source: String,
     dest_dir: String,
     do_async: bool,
@@ -119,7 +120,7 @@ struct Mover {
     event_sender: Arc<Sender<(Event, Arc<State>)>>,
 }
 
-impl Mover {
+impl Copier {
     fn new(
         source: String,
         dest_dir: String,
@@ -160,7 +161,7 @@ impl Mover {
             copied_bytes: 0.into(),
         };
         (
-            Mover {
+            Copier {
                 source,
                 dest_dir,
                 do_async,
@@ -204,8 +205,6 @@ impl Mover {
             }
         }));
         self.copier_handle = Some(thread::spawn(move || {
-            let (pool, job_q, _res_q) = ThreadPool::new::<()>(8);
-            let job_q = Arc::new(job_q);
             if do_async {
                 block_on(Self::transfer_async(
                     source,
@@ -214,16 +213,8 @@ impl Mover {
                     internal_event_tx,
                 ));
             } else {
-                Self::transfer(
-                    source,
-                    dest_dir,
-                    tree_root.clone(),
-                    internal_event_tx,
-                    job_q.clone(),
-                );
+                Self::transfer(source, dest_dir, tree_root.clone(), internal_event_tx);
             }
-            drop(job_q);
-            drop(pool);
         }));
     }
 
@@ -244,9 +235,8 @@ impl Mover {
             .create_new(true)
             .write(true)
             .open(dest_path)
-            .expect(format!("issue in dest path {dest_path}").as_str());
-        // copy(&mut source_file, &mut dest_file).expect("error in copying");
-        let mut buf: [u8; 4096] = [0; 1 << 12];
+            .unwrap();
+        let mut buf = [0; 1 << 18];
         loop {
             let bytes_read = source_file.read(&mut buf).expect("error in reading file");
             if bytes_read == 0 {
@@ -261,8 +251,6 @@ impl Mover {
                     event_type: EventType::DataCopied(bytes_read as u64),
                 })
                 .unwrap();
-
-            buf = [0; 1 << 12];
         }
         event_sender
             .send(Event {
@@ -306,29 +294,19 @@ impl Mover {
         dest_dir: String,
         tree_node: Arc<win_tree::TreeNode>,
         event_sender: Arc<Sender<Event>>,
-        job_q: Arc<ThreadPoolJobSender<()>>,
     ) {
         if !tree_node.is_file {
             let dest_path = format!("{}/{}", dest_dir, tree_node.name);
             fs::create_dir(&dest_path).expect(
                 "Destination either already exists or does not have the given parent path.",
             );
-            for child in tree_node.children.iter() {
+            tree_node.children.par_iter().for_each(|child| {
                 let child_source = format!("{}/{}", source, child.name);
                 let child_dest_dir = dest_path.to_string();
                 let child_node = child.clone();
                 let child_event_sender = event_sender.clone();
-                let child_job_q = job_q.clone();
-                job_q.add(Box::new(move || {
-                    Self::transfer(
-                        child_source,
-                        child_dest_dir,
-                        child_node,
-                        child_event_sender,
-                        child_job_q,
-                    )
-                }));
-            }
+                Self::transfer(child_source, child_dest_dir, child_node, child_event_sender);
+            });
             return;
         }
         Self::copy(
@@ -339,7 +317,7 @@ impl Mover {
     }
 }
 
-impl Drop for Mover {
+impl Drop for Copier {
     fn drop(&mut self) {
         if let Some(handle) = self.copier_handle.take() {
             handle.join().unwrap();
