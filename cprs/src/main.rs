@@ -13,6 +13,8 @@ use std::{
     time::Instant,
 };
 
+static COPY_BUFFER: [u8; 1 << 18] = [0; 1 << 18];
+
 fn clear_screen() {
     print!("{}[2J", 27 as char); // ANSI escape code to clear the screen
     print!("{}[1;1H", 27 as char); // ANSI escape code to move the cursor to the top-left corner
@@ -84,10 +86,14 @@ struct State {
 impl fmt::Display for State {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut out = String::new();
-        let total = self.total_bytes;
-        let copied = self.copied_bytes.load(std::sync::atomic::Ordering::Relaxed);
-        let progress = (copied as f64 / total as f64) * 100.0;
-        let progress_char_size = progress as usize;
+        let total_data = self.total_bytes;
+        let copied_data = self.copied_bytes.load(std::sync::atomic::Ordering::Relaxed);
+        let total_files = self.file_count;
+        let copied_files = self
+            .copied_file_count
+            .load(std::sync::atomic::Ordering::Relaxed);
+        let progress_data = (copied_data as f64 / total_data as f64) * 100.0;
+        let progress_char_size = progress_data as usize;
         out.push_str(
             format!(
                 "[{}>{}]\n",
@@ -98,10 +104,12 @@ impl fmt::Display for State {
         );
         out.push_str(
             format!(
-                "- Total (KB) - {}\n- Copied (KB) - {}\n- Progress - {:.2}%\n",
-                total / (1 << 10),
-                copied / (1 << 10),
-                progress
+                "- Files - {} / {}\n- Data (KB) - {} / {} ({:.2}%)\n",
+                copied_files,
+                total_files,
+                copied_data / (1 << 10),
+                total_data / (1 << 10),
+                progress_data
             )
             .as_str(),
         );
@@ -236,7 +244,7 @@ impl Copier {
             .write(true)
             .open(dest_path)
             .unwrap();
-        let mut buf = [0; 1 << 18];
+        let mut buf = COPY_BUFFER;
         loop {
             let bytes_read = source_file.read(&mut buf).expect("error in reading file");
             if bytes_read == 0 {

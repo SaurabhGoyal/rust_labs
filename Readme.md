@@ -42,16 +42,18 @@
   - async and tokio - better state management and concurrency
   - Playability - Larger bricks, faster response time to user control.
 
-## move_r [In Progress]
-- **Description** - Data transfer tool for large amounts of data
+## cprs [Improvements pending]
+- **Description** - Data copier tool for large amounts of data
 - **Target concepts** -
   - win_tree - Used to walk and build tree for given path
   - io - Used to perform copying of one path to given location
   - thread - Threads to listen to events from transfer process and update status
-  - async -
+  - rayon - parallellisation of transfer logic
 - **Further changes** -
+  - async - Test if there is any benefit of transfer-async.
+  - benchmark - Benchmarking performance against deep and wide trees and ssd and hdd.
 
-## torrent_r [Not Started Yet]
+## torrentrs [Not Started Yet]
 - **Description** - Torrent downloader in terminal
 - **Target concepts** -
   - thread -
