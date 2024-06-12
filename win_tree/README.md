@@ -1,5 +1,10 @@
 # Win Tree
-A program to get the tree structure information of given directory in a recursive manner. This is same as [Windows `tree` command](https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/tree) hence the name `win_tree` except that this supports json formating, depth control and filtering of files based on pattern matching on names.
+A program to get the tree structure information of given directory in a recursive manner. This is same as [Windows `tree` command](https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/tree) hence the name `win_tree` except that this supports json formating, depth control and filtering of files based on pattern matching on names. 
+
+# Performance
+- **[No support for Symlinks]** Program uses `fs::symlink_metadata` which translates to unix's `lstat` command which is ~10-15% faster that `stat` command as the former does not follow symlinks.
+- Reducing `lstat` system call to only once per path.
+- Using `rayon` to parallely trigger tasks for each path.
 
 # Usecase
 This command is useful for scenarios where making a complete backup of complete data is too expensive hence a snapshot of the file structure tree can be taken and backed up so that atleast the names of the files is available and those files can be fetched again oif needed. (I am using this to create snapshot on a daily basis of my external 8 TB drive that holds all my media.)
@@ -10,8 +15,7 @@ This command is useful for scenarios where making a complete backup of complete 
 - [Optional] Exclude - [-e <regex_pattern>] Controls which paths to exclude from snapshot.
 - [Optional] Build Method - [-m <method_name>] Controls which method will be used to build the tree. Following options are there -
   - serial-async - No parallelisation, recursive implementation.
-  - par-rayon - Parallellisation with rayon's `par_bridge` on `read_dir` iterator, recursive implementation.
-  - par-tp - Parallellisation with a custom written threadpool, pure function implementation.  
+  - par-rayon - Parallellisation with rayon's `par_bridge` on `read_dir` iterator, recursive implementation. **[This gives results fastest]**.
 
 # How to use
 Via crates - [win_tree](https://crates.io/crates/win_tree).
@@ -50,7 +54,7 @@ Built in 17.884196059s
 Serialised in 149.379899ms
 ```
 
-## Multi threaded build-par using custom written threadpool
+## ~~[Method removed because of significantly worse performance among other methods] Multi threaded build-par using custom written threadpool~~
 This was quite complex to achieve and does not produce better results. The reason for completing this was purely learning how it can be done. There are following steps of thinking about this logic -
 - **Pure functions -**
   - Jobs running in threadpool must be pure functions.
