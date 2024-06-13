@@ -41,6 +41,13 @@ Built in **74.273552703s**
 Serialised in **134.912809ms**
 ```
 
+Release build after optimisations -
+```
+saurabh@Saurabh-Raider:/mnt/d/Saurabh/Personal/rust_labs$ target/release/win_tree /mnt/f/stuff/ -e "^(?:\..*|doc|debug)" > target/snapshot.json
+Built in 12.126296367s
+Serialised in 7.996699ms
+```
+
 ## Multi threaded build-par using rayon
 Result on running on my external HDD with cap 8 TB and having data of ~4.2 TB across ~15600 files - Built snapshot in 17.88 seconds.
 ```
@@ -51,8 +58,14 @@ note: to use the edition 2021 resolver, specify `workspace.resolver = "2"` in th
 note: for more details see https://doc.rust-lang.org/cargo/reference/resolver.html#resolver-versions
     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.36s
      Running `target/debug/win_tree /mnt/f/stuff/ -e '^(?:\..*|doc|debug)'`
-Built in 17.884196059s
+Built in 10.809293287s
 Serialised in 149.379899ms
+```
+Release build after optimisations -
+```
+saurabh@Saurabh-Raider:/mnt/d/Saurabh/Personal/rust_labs$ target/release/win_tree /mnt/f/stuff/ -e "^(?:\..*|doc|debug)" -m par-rayon > target/snapshot.json
+Built in 10.809293287s
+Serialised in 8.4497ms
 ```
 
 ## ~~[Method removed because of significantly worse performance among other methods] Multi threaded build-par using custom written threadpool~~
