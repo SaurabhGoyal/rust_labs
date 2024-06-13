@@ -235,6 +235,26 @@
             },
             "args": [],
             "cwd": "${workspaceFolder}"
-        }
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug executable 'torrentrs'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=torrentrs",
+                    "--package=torrentrs"
+                ],
+                "filter": {
+                    "name": "torrentrs",
+                    "kind": "bin"
+                }
+            },
+            "args": [
+                "torrentrs/bill_hicks_sample.torrent",
+            ],
+            "cwd": "${workspaceFolder}"
+        },
     ]
 }
