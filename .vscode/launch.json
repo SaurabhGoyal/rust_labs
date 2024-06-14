@@ -252,7 +252,7 @@
                 }
             },
             "args": [
-                "torrentrs/bill_hicks_sample.torrent",
+                "torrentrs/sample.torrent",
             ],
             "cwd": "${workspaceFolder}"
         },
