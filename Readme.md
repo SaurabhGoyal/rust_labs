@@ -65,6 +65,20 @@
   - io -
 - **Further changes** -
 
+## Async IO lib [Not Started Yet]
+- **Description** - Essentially a tokio clone. To learn underlying system calls such as select and epoll and new non-blocking IO construct such as io_uring.
+- **Target concepts** -
+  - async io -
+  - async net -
+- **Further changes** -
+- **References** -
+  - https://rust-lang.github.io/async-book/02_execution/02_future.htmls
+  - https://pages.cs.wisc.edu/~remzi/OSTEP/threads-events.pdf
+  - https://github.com/Gilnaa/epoll-rs/
+  - https://www.zupzup.org/epoll-with-rust/index.html
+  - https://blog.pjam.me/posts/select-syscall-in-rust/
+  - https://mbinjamil.dev/writings/understanding-async-io/
+
 ## workflow_engine [Not Started Yet]
 - **Description** - Workflow orchestration tool - similar to [dagger](https://github.com/wayfair-incubator/dagger) or [Uber cadence](https://github.com/uber/cadence/tree/master). Refer to [awesome-workflow-engines repo](https://github.com/meirwah/awesome-workflow-engines) for more knowledge.
 - **Target concepts** -
@@ -76,6 +90,7 @@
 
 # Reference projects
 - Small-Medium projects (<1k stars, <1k commits) - easy to go through and learn from.
+  - [bytes](https://docs.rs/bytes/1.6.0/bytes/struct.Bytes.html) -  Zero cost bytes buffer management library - essentially an `Arc<Vec<u8>>`.
   - [bendy](https://github.com/P3KI/bendy) - Bencode (bittorrent metainfo file encoding) encoder/decoder.
   - [console](https://github.com/console-rs/console) - Terminal manipulator for building CLIs.
   - [flamegraph](https://github.com/flamegraph-rs/flamegraph) - Flamegraph profiler for binaries.
@@ -86,6 +101,7 @@
   - [hyperswitch](https://github.com/juspay/hyperswitch) - Open Payment Gateway (By Juspay)
   - [rustdesk](https://github.com/rustdesk/rustdesk) - Remote Desktop (Same as Teamviewer)
   - [rqbit](https://github.com/ikatson/rqbit) - Torrent client.
+  - [nix](https://github.com/nix-rust/nix/) - Abstractions for Unix kernel APIs, essentially more refined wrappers on libc functions.
 - Also check
   - https://lib.rs/ - index of crates.io
   - [Awesome-rust](https://github.com/rust-unofficial/awesome-rust)
