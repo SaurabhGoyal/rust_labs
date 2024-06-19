@@ -253,6 +253,7 @@
             },
             "args": [
                 "torrentrs/sample.torrent",
+                "local/test2",
             ],
             "cwd": "${workspaceFolder}"
         },
