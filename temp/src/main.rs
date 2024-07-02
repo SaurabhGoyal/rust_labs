@@ -7,5 +7,5 @@ fn main() {
     // tcp_concurrency::run();
     // actor::run();
     // simple_future::run();
-    tokio_single_thread::run(); // DOES NOT WORK - ONLY one task is executed, no concurrency.
+    tokio_single_thread::run();
 }
