@@ -109,4 +109,6 @@
   - Github ([search(<100 stars, updated since May, 2024)](https://github.com/search?q=stars%3A%3C100+pushed%3A%3E2024-05-01+language%3ARust&type=Repositories&ref=advsearch&l=Rust&l=) and [trending](https://github.com/trending/rust?since=daily))
 
 # Useful crates
+- [dashmap](https://crates.io/crates/dashmap) - Concurrent hashmap.
 - [tracing](https://crates.io/crates/tracing) - Tracing of events and spans in async apps.
+- [flatdata](https://crates.io/crates/flatdata) - Library to create data structures following a flat data model.
