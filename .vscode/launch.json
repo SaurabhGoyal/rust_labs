@@ -252,7 +252,7 @@
                 }
             },
             "args": [
-                "torrentrs/sample_7_multifile.torrent",
+                "torrentrs/sample_5.torrent",
                 "local/test2",
             ],
             "cwd": "${workspaceFolder}"
