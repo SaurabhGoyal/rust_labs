@@ -53,7 +53,7 @@
   - async - Test if there is any benefit of transfer-async.
   - benchmark - Benchmarking performance against deep and wide trees and ssd and hdd.
 
-## torrentrs [Not Started Yet]
+## torrentrs [Split and moved to https://gitlab.com/saurabh.2561/torrentrs]
 - **Description** - Torrent downloader in terminal
 - **Target concepts** -
   - thread -
