@@ -88,9 +88,17 @@
   - async -
 - **Further changes** -
 
-# Reference projects
+# References
+## Blogs / feeds
+- https://this-week-in-rust.org/
+- https://kerkour.com/
+- https://blog.yoshuawuyts.com/
+- https://smallcultfollowing.com/babysteps/
+
+## Projects
 - Small-Medium projects (<1k stars, <1k commits) - easy to go through and learn from.
   - [bytes](https://docs.rs/bytes/1.6.0/bytes/struct.Bytes.html) -  Zero cost bytes buffer management library - essentially an `Arc<Vec<u8>>`.
+  - [anyhow](https://github.com/dtolnay/anyhow/) - Error wrapper for easier propagation, diplay and debugging.
   - [bendy](https://github.com/P3KI/bendy) - Bencode (bittorrent metainfo file encoding) encoder/decoder.
   - [console](https://github.com/console-rs/console) - Terminal manipulator for building CLIs.
   - [flamegraph](https://github.com/flamegraph-rs/flamegraph) - Flamegraph profiler for binaries.
@@ -98,6 +106,8 @@
   - [sig](https://github.com/ynqa/sig/tree/main) - Interactive grep on a stream
   - [ncspot](https://github.com/hrkfdn/ncspot) - Spotify terminal client
 - Fairly large projects
+  - [vector](https://github.com/vectordotdev/vector) - Observability pipeline.
+  - [memorysafety](https://github.com/memorysafety) - Infrastructure wide low-level tools built in a memory-safe manner at https://www.memorysafety.org/.
   - [hyperswitch](https://github.com/juspay/hyperswitch) - Open Payment Gateway (By Juspay)
   - [rustdesk](https://github.com/rustdesk/rustdesk) - Remote Desktop (Same as Teamviewer)
   - [rqbit](https://github.com/ikatson/rqbit) - Torrent client.
@@ -108,7 +118,7 @@
   - [Idiomatic rust index](https://github.com/mre/idiomatic-rust)
   - Github ([search(<100 stars, updated since May, 2024)](https://github.com/search?q=stars%3A%3C100+pushed%3A%3E2024-05-01+language%3ARust&type=Repositories&ref=advsearch&l=Rust&l=) and [trending](https://github.com/trending/rust?since=daily))
 
-# Useful crates
+## Useful crates
 - [dashmap](https://crates.io/crates/dashmap) - Concurrent hashmap.
 - [tracing](https://crates.io/crates/tracing) - Tracing of events and spans in async apps.
 - [flatdata](https://crates.io/crates/flatdata) - Library to create data structures following a flat data model.

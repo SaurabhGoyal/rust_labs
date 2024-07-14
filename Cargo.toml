@@ -1,2 +1,2 @@
 [workspace]
-members = [ "unbricked", "conc_adder","guessing_game", "sudoku_solver", "sysinfo_cli", "temp", "tiny_shell", "win_tree", "cprs", "threadpool"]
+members = [ "crates/unbricked", "crates/conc_adder","crates/guessing_game", "crates/sudoku_solver", "crates/sysinfo_cli", "crates/temp", "crates/tiny_shell", "crates/win_tree", "crates/cprs", "crates/threadpool"]
