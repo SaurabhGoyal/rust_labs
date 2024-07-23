@@ -1,4 +1,13 @@
 # Practice projects in Rust.
+- To run any of them, install rust tool chain - https://www.rust-lang.org/tools/install
+- To run a program, run following command with package name as folder name of the crate inside `crates` folder and args for that program. Check the readme inside that folder to know about its arguments -
+```
+cargo run -p <package_name> -- <args>
+
+Ex.- cargo run -p cprs -- -r source_dir destination_dir
+```
+
+# Projects
 ## win_tree [Improvements pending]
 - **Description** - Windows tree command but with json output.
 - **Target concepts** -
